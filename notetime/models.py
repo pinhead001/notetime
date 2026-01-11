@@ -1,6 +1,7 @@
 from datetime import date
+from typing import Optional
 from sqlalchemy import Integer, String, Date, Boolean, ForeignKey
-from sqlalchemy.orm import relationship, mapped_column
+from sqlalchemy.orm import relationship, mapped_column, Mapped
 from notetime.db import Base
 
 # -----------------------------------
@@ -9,14 +10,16 @@ from notetime.db import Base
 class Week(Base):
     __tablename__ = "weeks"
 
-    id = mapped_column(Integer, primary_key=True)
-    start_date = mapped_column(Date, unique=True, nullable=False)
-    note = mapped_column(String, nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
+    start_date: Mapped[date] = mapped_column(Date, unique=True, nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
-    tasks = relationship(
+    tasks: Mapped[list["Task"]] = relationship(
         "Task",
         back_populates="week",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        default_factory=list,
+        init=False
     )
 
 # -----------------------------------
@@ -25,11 +28,11 @@ class Week(Base):
 class Project(Base):
     __tablename__ = "projects"
 
-    id = mapped_column(Integer, primary_key=True)
-    name = mapped_column(String, unique=True, nullable=False)
-    is_active = mapped_column(Boolean, default=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    tasks = relationship("Task", back_populates="project")
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="project", default_factory=list, init=False)
 
 # -----------------------------------
 # Task
@@ -37,19 +40,21 @@ class Project(Base):
 class Task(Base):
     __tablename__ = "tasks"
 
-    id = mapped_column(Integer, primary_key=True)
-    title = mapped_column(String, nullable=False)
-    priority = mapped_column(Integer, default=3)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    week_id: Mapped[int] = mapped_column(ForeignKey("weeks.id"), nullable=False)
 
-    week_id = mapped_column(ForeignKey("weeks.id"), nullable=False)
-    project_id = mapped_column(ForeignKey("projects.id"), nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=3)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"), nullable=True, default=None)
 
-    week = relationship("Week", back_populates="tasks")
-    project = relationship("Project", back_populates="tasks")
-    work_entries = relationship(
+    week: Mapped["Week"] = relationship("Week", back_populates="tasks", init=False)
+    project: Mapped[Optional["Project"]] = relationship("Project", back_populates="tasks", init=False, default=None)
+    work_entries: Mapped[list["WorkEntry"]] = relationship(
         "WorkEntry",
         back_populates="task",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        default_factory=list,
+        init=False
     )
 
 # -----------------------------------
@@ -58,10 +63,10 @@ class Task(Base):
 class WorkEntry(Base):
     __tablename__ = "work_entries"
 
-    id = mapped_column(Integer, primary_key=True)
-    task_id = mapped_column(ForeignKey("tasks.id"), nullable=False)
-    date = mapped_column(Date, nullable=False)
-    minutes = mapped_column(Integer, nullable=False)
-    note = mapped_column(String, nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
-    task = relationship("Task", back_populates="work_entries")
+    task: Mapped["Task"] = relationship("Task", back_populates="work_entries", init=False)
