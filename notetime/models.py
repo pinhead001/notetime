@@ -1,8 +1,19 @@
 from datetime import date
 from typing import Optional
+from enum import Enum
 from sqlalchemy import Integer, String, Date, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from notetime.db import Base
+
+# -----------------------------------
+# Enums
+# -----------------------------------
+class TaskState(str, Enum):
+    """Task lifecycle states per rules.md"""
+    ACTIVE = "active"
+    DELEGATED = "delegated"
+    COMPLETED = "completed"
+    CANCELED = "canceled"
 
 # -----------------------------------
 # Week
@@ -44,11 +55,13 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     week_id: Mapped[int] = mapped_column(ForeignKey("weeks.id"), nullable=False)
 
+    state: Mapped[str] = mapped_column(String, default=TaskState.ACTIVE.value)
     priority: Mapped[int] = mapped_column(Integer, default=3)
     project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"), nullable=True, default=None)
+    delegate: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
     week: Mapped["Week"] = relationship("Week", back_populates="tasks", init=False)
-    project: Mapped[Optional["Project"]] = relationship("Project", back_populates="tasks", init=False, default=None)
+    project: Mapped[Optional["Project"]] = relationship("Project", back_populates="tasks", init=False)
     work_entries: Mapped[list["WorkEntry"]] = relationship(
         "WorkEntry",
         back_populates="task",

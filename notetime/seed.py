@@ -20,9 +20,16 @@ def seed():
     # Create seed data
     week = Week(start_date=week_start)
     project = Project(name="Notetime")
-    task = Task(title="Define core models", week=week, project=project)
 
-    session.add_all([week, project, task])
+    # Add week and project first to get IDs
+    session.add(week)
+    session.add(project)
+    session.flush()  # Get auto-generated IDs
+
+    # Now create task with week_id and project_id
+    task = Task(title="Define core models", week_id=week.id, project_id=project.id)
+
+    session.add(task)
     session.commit()
     session.close()
 
