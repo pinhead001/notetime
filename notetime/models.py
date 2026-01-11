@@ -1,12 +1,15 @@
 from datetime import date
 from sqlalchemy import Integer, String, Date, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, mapped_column
-from notetime.db import Base
+from dataclasses import dataclass
+# from notetime.db import Base
 
 # -----------------------------------
 # Week
 # -----------------------------------
-class Week(Base):
+# class Week(Base):
+
+class Week:
     __tablename__ = "weeks"
 
     id = mapped_column(Integer, primary_key=True)
@@ -22,7 +25,9 @@ class Week(Base):
 # -----------------------------------
 # Project
 # -----------------------------------
-class Project(Base):
+# class Project(Base):
+
+class Project:
     __tablename__ = "projects"
 
     id = mapped_column(Integer, primary_key=True)
@@ -34,7 +39,9 @@ class Project(Base):
 # -----------------------------------
 # Task
 # -----------------------------------
-class Task(Base):
+# class Task(Base):
+
+class Task:
     __tablename__ = "tasks"
 
     id = mapped_column(Integer, primary_key=True)
@@ -55,7 +62,9 @@ class Task(Base):
 # -----------------------------------
 # WorkEntry
 # -----------------------------------
-class WorkEntry(Base):
+# class WorkEntry(Base):
+
+class WorkEntry:
     __tablename__ = "work_entries"
 
     id = mapped_column(Integer, primary_key=True)
@@ -65,3 +74,13 @@ class WorkEntry(Base):
     note = mapped_column(String, nullable=True)
 
     task = relationship("Task", back_populates="work_entries")
+
+# -----------------------------------
+# TaskSummary
+# -----------------------------------
+
+@dataclass(frozen=True)
+class TaskSummary:
+    task_id: str
+    task_name: str
+    total_minutes: int
