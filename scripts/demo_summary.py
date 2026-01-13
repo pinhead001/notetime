@@ -6,7 +6,18 @@ Creates sample data and demonstrates the weekly summary functionality.
 
 Usage:
     python scripts/demo_summary.py
+    OR
+    python demo_summary.py (from scripts directory)
 """
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import notetime module
+# This allows running the script directly from scripts/ directory
+script_dir = Path(__file__).resolve().parent
+parent_dir = script_dir.parent
+sys.path.insert(0, str(parent_dir))
+
 from datetime import date, timedelta
 from notetime.db import SessionLocal, engine
 from notetime.models import Base, Week, Project, Task, WorkEntry
