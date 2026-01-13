@@ -229,18 +229,58 @@ def rollover_week(from_week_id: int, to_week_id: int, session) -> Dict[str, int]
     Returns:
         {"archived": 2, "carried": 3, "delegated": 1}
 
-    Note:
-        This function is a stub for Day 5.
-        Requires importing Task model and TaskState enum.
+    Example:
+        >>> from notetime.db import SessionLocal
+        >>> session = SessionLocal()
+        >>> counts = rollover_week(from_week_id=1, to_week_id=2, session=session)
+        >>> print(f"Carried {counts['carried']} active tasks to next week")
     """
-    # TODO: Implement in Day 5
-    # 1. Query all tasks for from_week_id
-    # 2. Filter by state
-    # 3. Clone ACTIVE tasks to to_week_id
-    # 4. Return counts
+    from sqlalchemy import select
+    from notetime.models import Task, TaskState
+
+    # Query all tasks for the source week
+    tasks_query = select(Task).where(Task.week_id == from_week_id)
+    tasks = session.scalars(tasks_query).all()
+
+    if not tasks:
+        return {
+            "archived": 0,
+            "carried": 0,
+            "delegated": 0
+        }
+
+    # Count tasks by state
+    archived_count = 0
+    carried_count = 0
+    delegated_count = 0
+
+    for task in tasks:
+        if task.state == TaskState.ACTIVE.value:
+            # Clone ACTIVE tasks to the new week
+            new_task = Task(
+                title=task.title,
+                week_id=to_week_id,
+                state=TaskState.ACTIVE.value,
+                priority=task.priority,
+                project_id=task.project_id,
+                delegate=task.delegate
+            )
+            session.add(new_task)
+            carried_count += 1
+
+        elif task.state == TaskState.DELEGATED.value:
+            # DELEGATED tasks stay in old week
+            delegated_count += 1
+
+        elif task.state in [TaskState.COMPLETED.value, TaskState.CANCELED.value]:
+            # COMPLETED and CANCELED tasks are archived (stay in old week)
+            archived_count += 1
+
+    # Commit the new tasks
+    session.commit()
 
     return {
-        "archived": 0,
-        "carried": 0,
-        "delegated": 0
+        "archived": archived_count,
+        "carried": carried_count,
+        "delegated": delegated_count
     }
