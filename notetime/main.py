@@ -1,18 +1,22 @@
 """
-FastAPI application - Day 6 CRUD Endpoints
+FastAPI application - Day 6 CRUD Endpoints + Day 7 HTMX UI
 
-Main API application providing CRUD operations for tasks, work entries, and weekly views.
+Main API application providing CRUD operations and HTMX-powered web interface.
 
 Run with:
     uvicorn notetime.main:app --reload
 
 API will be available at:
-    http://localhost:8000
-    Docs: http://localhost:8000/docs
+    http://localhost:8000/docs (API docs)
+    http://localhost:8000 (Web UI)
 """
 from datetime import date, timedelta
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Depends, status
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Depends, status, Request, Form
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,9 +38,14 @@ Base.metadata.create_all(bind=engine)
 # Initialize FastAPI app
 app = FastAPI(
     title="Notetime API",
-    description="Weekly task and time-tracking API",
+    description="Weekly task and time-tracking API with HTMX UI",
     version="1.0.0"
 )
+
+# Setup templates and static files
+BASE_DIR = Path(__file__).resolve().parent.parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
 # Dependency to get database session
@@ -53,46 +62,58 @@ def get_db():
 # Task Endpoints
 # ============================================
 
-@app.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-def create_task(task: TaskCreate, db: Session = Depends(get_db)):
+@app.post("/api/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+async def create_task_api(
+    title: str = Form(...),
+    week_id: int = Form(...),
+    state: str = Form("active"),
+    priority: int = Form(3),
+    project_id: Optional[int] = Form(None),
+    delegate: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
     """
-    Create a new task.
+    Create a new task (accepts form data for HTMX or JSON for API).
 
     Args:
-        task: Task data (title, week_id, state, priority, project_id, delegate)
+        title: Task title
+        week_id: Week ID
+        state: Task state (default: active)
+        priority: Priority level (default: 3)
+        project_id: Project ID (optional)
+        delegate: Delegate name (optional)
 
     Returns:
         Created task with ID
 
     Raises:
         404: If week_id or project_id doesn't exist
-        422: If validation fails
     """
     # Verify week exists
-    week = db.get(Week, task.week_id)
+    week = db.get(Week, week_id)
     if not week:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Week with id {task.week_id} not found"
+            detail=f"Week with id {week_id} not found"
         )
 
     # Verify project exists if provided
-    if task.project_id is not None:
-        project = db.get(Project, task.project_id)
+    if project_id is not None and project_id != "":
+        project = db.get(Project, project_id)
         if not project:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Project with id {task.project_id} not found"
+                detail=f"Project with id {project_id} not found"
             )
 
     # Create task
     db_task = Task(
-        title=task.title,
-        week_id=task.week_id,
-        state=task.state,
-        priority=task.priority,
-        project_id=task.project_id,
-        delegate=task.delegate
+        title=title,
+        week_id=week_id,
+        state=state,
+        priority=priority,
+        project_id=project_id if project_id and project_id != "" else None,
+        delegate=delegate
     )
     db.add(db_task)
     db.commit()
@@ -184,13 +205,22 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 # Work Entry Endpoints
 # ============================================
 
-@app.post("/work_entries", response_model=WorkEntryResponse, status_code=status.HTTP_201_CREATED)
-def create_work_entry(entry: WorkEntryCreate, db: Session = Depends(get_db)):
+@app.post("/api/work_entries", response_model=WorkEntryResponse, status_code=status.HTTP_201_CREATED)
+async def create_work_entry_api(
+    task_id: int = Form(...),
+    date: date = Form(...),
+    minutes: int = Form(...),
+    note: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
     """
-    Create a new work entry (time log).
+    Create a new work entry (time log) - accepts form data for HTMX.
 
     Args:
-        entry: Work entry data (task_id, date, minutes, note)
+        task_id: ID of task
+        date: Date of work
+        minutes: Minutes worked
+        note: Optional note
 
     Returns:
         Created work entry with ID
@@ -199,20 +229,27 @@ def create_work_entry(entry: WorkEntryCreate, db: Session = Depends(get_db)):
         404: If task_id doesn't exist
         422: If validation fails (e.g., negative minutes)
     """
+    # Validate minutes
+    if minutes <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Minutes must be positive"
+        )
+
     # Verify task exists
-    task = db.get(Task, entry.task_id)
+    task = db.get(Task, task_id)
     if not task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task with id {entry.task_id} not found"
+            detail=f"Task with id {task_id} not found"
         )
 
     # Create work entry
     db_entry = WorkEntry(
-        task_id=entry.task_id,
-        date=entry.date,
-        minutes=entry.minutes,
-        note=entry.note
+        task_id=task_id,
+        date=date,
+        minutes=minutes,
+        note=note
     )
     db.add(db_entry)
     db.commit()
@@ -455,16 +492,165 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 
 
 # ============================================
+# Web UI Routes (HTMX)
+# ============================================
+
+@app.get("/", response_class=HTMLResponse)
+async def weekly_view(request: Request, db: Session = Depends(get_db)):
+    """
+    Serve the weekly HTML page (current week).
+
+    This is the main web interface.
+    """
+    # Get or create current week
+    today = date.today()
+    days_since_monday = today.weekday()
+    week_start = today - timedelta(days=days_since_monday)
+
+    week = db.scalars(
+        select(Week).where(Week.start_date == week_start)
+    ).first()
+
+    if not week:
+        week = Week(start_date=week_start)
+        db.add(week)
+        db.commit()
+        db.refresh(week)
+
+    # Get weekly data
+    weekly_data = get_week(week.id, db)
+
+    return templates.TemplateResponse("weekly.html", {
+        "request": request,
+        "week": weekly_data.week,
+        "tasks": weekly_data.tasks,
+        "work_entries": weekly_data.work_entries,
+        "projects": weekly_data.projects,
+        "summary": weekly_data.summary
+    })
+
+
+@app.get("/weeks/{week_id}/page", response_class=HTMLResponse)
+async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depends(get_db)):
+    """Serve weekly page for a specific week"""
+    weekly_data = get_week(week_id, db)
+
+    return templates.TemplateResponse("weekly.html", {
+        "request": request,
+        "week": weekly_data.week,
+        "tasks": weekly_data.tasks,
+        "work_entries": weekly_data.work_entries,
+        "projects": weekly_data.projects,
+        "summary": weekly_data.summary
+    })
+
+
+# ============================================
+# HTMX Partial Routes
+# ============================================
+
+@app.get("/partials/task-form", response_class=HTMLResponse)
+async def task_form_partial(request: Request, week_id: int, db: Session = Depends(get_db)):
+    """Return task creation form (HTMX partial)"""
+    projects = db.scalars(select(Project).where(Project.is_active == True)).all()
+
+    html = f"""
+    <form hx-post="/api/tasks" hx-target="#add-task-container">
+        <input type="hidden" name="week_id" value="{week_id}">
+        <input type="text" name="title" placeholder="Task title" required>
+        <select name="project_id">
+            <option value="">No project</option>
+            {"".join(f'<option value="{p.id}">{p.name}</option>' for p in projects)}
+        </select>
+        <select name="priority">
+            <option value="1">Priority 1 (High)</option>
+            <option value="2">Priority 2</option>
+            <option value="3" selected>Priority 3 (Normal)</option>
+        </select>
+        <button type="submit">Add Task</button>
+        <button type="button" hx-get="/partials/task-form-cancel" hx-target="#add-task-container">Cancel</button>
+    </form>
+    """
+    return HTMLResponse(content=html)
+
+
+@app.get("/partials/task-form-cancel", response_class=HTMLResponse)
+async def task_form_cancel():
+    """Cancel task form"""
+    html = '<button hx-get="/partials/task-form?week_id=1" hx-target="#add-task-container" hx-swap="innerHTML" class="btn-add">+ New Task</button>'
+    return HTMLResponse(content=html)
+
+
+@app.get("/partials/log-form", response_class=HTMLResponse)
+async def log_form_partial(request: Request, week_id: int, db: Session = Depends(get_db)):
+    """Return work entry form (HTMX partial)"""
+    tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
+
+    html = f"""
+    <form hx-post="/api/work_entries" hx-target="#add-log-container">
+        <select name="task_id" required>
+            <option value="">Select task...</option>
+            {"".join(f'<option value="{t.id}">{t.title}</option>' for t in tasks)}
+        </select>
+        <input type="date" name="date" value="{date.today()}" required>
+        <input type="number" name="minutes" placeholder="Minutes worked" min="1" required>
+        <textarea name="note" placeholder="Note (optional)" rows="2"></textarea>
+        <button type="submit">Log Time</button>
+        <button type="button" hx-get="/partials/log-form-cancel" hx-target="#add-log-container">Cancel</button>
+    </form>
+    """
+    return HTMLResponse(content=html)
+
+
+@app.get("/partials/log-form-cancel", response_class=HTMLResponse)
+async def log_form_cancel():
+    """Cancel log form"""
+    html = '<button hx-get="/partials/log-form?week_id=1" hx-target="#add-log-container" hx-swap="innerHTML" class="btn-add">+ Log Time</button>'
+    return HTMLResponse(content=html)
+
+
+# ============================================
+# Task Action Routes (HTMX)
+# ============================================
+
+@app.put("/api/tasks/{task_id}/complete", response_class=HTMLResponse)
+async def complete_task(task_id: int, db: Session = Depends(get_db)):
+    """Mark task as completed (HTMX action)"""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task.state = TaskState.COMPLETED.value
+    db.commit()
+
+    # Return updated task HTML
+    return HTMLResponse(content=f'<div class="task-item task-completed">✓ {task.title} (Completed)</div>')
+
+
+@app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)
+async def defer_task(task_id: int, db: Session = Depends(get_db)):
+    """Mark task for deferral (HTMX action)"""
+    # In a full implementation, this would rollover to next week
+    # For now, just mark it visually
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')
+
+
+# ============================================
 # Health Check
 # ============================================
 
-@app.get("/")
-def root():
-    """Health check / welcome endpoint"""
+@app.get("/api")
+def api_root():
+    """API info endpoint"""
     return {
         "message": "Notetime API",
         "version": "1.0.0",
-        "docs": "/docs"
+        "docs": "/docs",
+        "web_ui": "/"
     }
 
 

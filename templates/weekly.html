@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notetime - Week of {{ week.start_date }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>Notetime</h1>
+            <p class="week-label">Week of {{ week.start_date }}</p>
+            {% if week.note %}
+            <p class="week-note">{{ week.note }}</p>
+            {% endif %}
+        </header>
+
+        <!-- Weekly Priorities Section -->
+        <section class="priorities">
+            <h2>📋 Weekly Priorities</h2>
+
+            {% if tasks %}
+            <div class="task-list">
+                {% for task in tasks %}
+                <div class="task-item task-{{ task.state }}" id="task-{{ task.id }}">
+                    <div class="task-header">
+                        <span class="task-title">{{ task.title }}</span>
+                        <span class="task-meta">
+                            {% if task.project_id and projects %}
+                                {% for project in projects %}
+                                    {% if project.id == task.project_id %}
+                                        <span class="project-tag">{{ project.name }}</span>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                            <span class="priority-badge">P{{ task.priority }}</span>
+                            <span class="state-badge state-{{ task.state }}">{{ task.state }}</span>
+                        </span>
+                    </div>
+
+                    {% if task.delegate %}
+                    <div class="task-delegate">
+                        Delegated to: {{ task.delegate }}
+                    </div>
+                    {% endif %}
+
+                    <!-- Task Actions (HTMX) -->
+                    <div class="task-actions">
+                        <button hx-put="/api/tasks/{{ task.id }}/complete"
+                                hx-target="#task-{{ task.id }}"
+                                hx-swap="outerHTML"
+                                class="btn-small">✓ Complete</button>
+                        <button hx-put="/api/tasks/{{ task.id }}/defer"
+                                hx-target="#task-{{ task.id }}"
+                                hx-swap="outerHTML"
+                                class="btn-small">→ Defer</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-state">No tasks for this week. Add one to get started!</p>
+            {% endif %}
+
+            <!-- Add Task Form (HTMX) -->
+            <div class="add-task-form" id="add-task-container">
+                <button hx-get="/partials/task-form?week_id={{ week.id }}"
+                        hx-target="#add-task-container"
+                        hx-swap="innerHTML"
+                        class="btn-add">+ New Task</button>
+            </div>
+        </section>
+
+        <!-- Daily Log Section -->
+        <section class="daily-log">
+            <h2>⏱️ Daily Log</h2>
+
+            {% if work_entries %}
+            <div class="log-entries">
+                {% for entry in work_entries %}
+                <div class="log-entry">
+                    <div class="log-header">
+                        <span class="log-date">{{ entry.date }}</span>
+                        <span class="log-duration">{{ (entry.minutes / 60)|round(2) }}h</span>
+                    </div>
+                    <div class="log-details">
+                        {% for task in tasks %}
+                            {% if task.id == entry.task_id %}
+                            <strong>{{ task.title }}</strong>
+                            {% endif %}
+                        {% endfor %}
+                        {% if entry.note %}
+                        <p class="log-note">{{ entry.note }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-state">No time logged yet.</p>
+            {% endif %}
+
+            <!-- Add Log Entry Form (HTMX) -->
+            <div class="add-log-form" id="add-log-container">
+                <button hx-get="/partials/log-form?week_id={{ week.id }}"
+                        hx-target="#add-log-container"
+                        hx-swap="innerHTML"
+                        class="btn-add">+ Log Time</button>
+            </div>
+        </section>
+
+        <!-- Summary Section -->
+        <section class="summary">
+            <h2>📊 Weekly Summary</h2>
+
+            {% if summary %}
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th>Project</th>
+                        <th>Task</th>
+                        <th>Mon</th>
+                        <th>Tue</th>
+                        <th>Wed</th>
+                        <th>Thu</th>
+                        <th>Fri</th>
+                        <th>Sat</th>
+                        <th>Sun</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project_name, tasks_data in summary.items() %}
+                        {% for task_name, days in tasks_data.items() %}
+                        <tr>
+                            <td class="project-cell">{{ project_name }}</td>
+                            <td class="task-cell">{{ task_name }}</td>
+                            <td>{{ days.get('Mon', '-') }}</td>
+                            <td>{{ days.get('Tue', '-') }}</td>
+                            <td>{{ days.get('Wed', '-') }}</td>
+                            <td>{{ days.get('Thu', '-') }}</td>
+                            <td>{{ days.get('Fri', '-') }}</td>
+                            <td>{{ days.get('Sat', '-') }}</td>
+                            <td>{{ days.get('Sun', '-') }}</td>
+                            <td class="total-cell"><strong>{{ days.get('Total', 0) }}h</strong></td>
+                        </tr>
+                        {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-state">No time logged to summarize.</p>
+            {% endif %}
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            <p>Notetime MVP - Faster than paper</p>
+            <p class="footer-links">
+                <a href="/api/weeks/{{ week.id }}/export">Export CSV</a> |
+                <a href="/docs">API Docs</a>
+            </p>
+        </footer>
+    </div>
+
+    <!-- HTMX Auto-refresh on form submit -->
+    <script>
+        // Reload page after successful HTMX operations
+        document.body.addEventListener('htmx:afterSwap', function(event) {
+            if (event.detail.target.id === 'add-task-container' ||
+                event.detail.target.id === 'add-log-container') {
+                // Give time for the swap to render
+                setTimeout(() => {
+                    // Check if we got a success response (form was submitted)
+                    if (event.detail.xhr.status === 200 || event.detail.xhr.status === 201) {
+                        location.reload();
+                    }
+                }, 100);
+            }
+        });
+    </script>
+</body>
+</html>
