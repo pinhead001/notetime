@@ -39,7 +39,10 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Notetime API",
     description="Weekly task and time-tracking API with HTMX UI",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
 # Setup templates and static files
