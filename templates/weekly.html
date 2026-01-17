@@ -168,17 +168,17 @@
 
     <!-- HTMX Auto-refresh on form submit -->
     <script>
-        // Reload page after successful HTMX operations
+        // Reload page after successful form submission (POST only, not GET)
         document.body.addEventListener('htmx:afterSwap', function(event) {
             if (event.detail.target.id === 'add-task-container' ||
                 event.detail.target.id === 'add-log-container') {
-                // Give time for the swap to render
-                setTimeout(() => {
-                    // Check if we got a success response (form was submitted)
-                    if (event.detail.xhr.status === 200 || event.detail.xhr.status === 201) {
-                        location.reload();
-                    }
-                }, 100);
+                // Only reload after POST requests (form submissions), not GET (showing form)
+                const wasPost = event.detail.requestConfig.verb === 'post';
+                const wasSuccess = event.detail.xhr.status === 200 || event.detail.xhr.status === 201;
+
+                if (wasPost && wasSuccess) {
+                    location.reload();
+                }
             }
         });
     </script>
