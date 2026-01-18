@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notetime - Week of {{ week.start_date }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </head>
@@ -38,8 +41,25 @@
                      id="task-{{ task.id }}"
                      data-task-id="{{ task.id }}"
                      tabindex="0">
-                    <div class="task-header">
+                    <!-- Task Actions (HTMX) on the left -->
+                    <div class="task-actions">
+                        <button hx-put="/api/tasks/{{ task.id }}/complete"
+                                hx-target="#task-{{ task.id }}"
+                                hx-swap="outerHTML"
+                                class="btn-icon"
+                                title="Complete">✓</button>
+                        <button hx-put="/api/tasks/{{ task.id }}/defer"
+                                hx-target="#task-{{ task.id }}"
+                                hx-swap="outerHTML"
+                                class="btn-icon"
+                                title="Mark as Waiting">⏸</button>
+                    </div>
+
+                    <div class="task-content">
                         <span class="task-title" data-editable="true">{{ task.title }}</span>
+                        {% if task.delegate %}
+                        <span class="task-delegate">→ {{ task.delegate }}</span>
+                        {% endif %}
                         <span class="task-meta">
                             {% if task.project_id and projects %}
                                 {% for project in projects %}
@@ -51,24 +71,6 @@
                             <span class="priority-badge">P{{ task.priority }}</span>
                             <span class="state-badge state-{{ task.state }}">{{ task.state }}</span>
                         </span>
-                    </div>
-
-                    {% if task.delegate %}
-                    <div class="task-delegate">
-                        Delegated to: {{ task.delegate }}
-                    </div>
-                    {% endif %}
-
-                    <!-- Task Actions (HTMX) -->
-                    <div class="task-actions">
-                        <button hx-put="/api/tasks/{{ task.id }}/complete"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-small">✓ Complete</button>
-                        <button hx-put="/api/tasks/{{ task.id }}/defer"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-small">→ Defer</button>
                     </div>
                 </div>
                 {% endfor %}

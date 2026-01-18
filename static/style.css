@@ -48,7 +48,9 @@ header h1 {
     padding: 10px;
     background-color: #fff3cd;
     border-left: 4px solid #ffc107;
-    font-style: italic;
+    font-family: 'Kalam', cursive;
+    font-size: 1.1em;
+    line-height: 1.6;
 }
 
 /* Sections */
@@ -78,11 +80,14 @@ h2 {
 .task-list {
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 8px;
 }
 
 .task-item {
-    padding: 15px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 15px;
     border-left: 4px solid #3498db;
     background-color: #f8f9fa;
     border-radius: 4px;
@@ -116,22 +121,31 @@ h2 {
     opacity: 0.5;
 }
 
-.task-header {
+.task-content {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    gap: 12px;
+    flex: 1;
+    flex-wrap: wrap;
 }
 
 .task-title {
-    font-size: 1.1em;
+    font-size: 1em;
     font-weight: 500;
+    flex-shrink: 0;
+}
+
+.task-delegate {
+    font-size: 0.9em;
+    color: #f39c12;
+    font-style: italic;
 }
 
 .task-meta {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
+    margin-left: auto;
 }
 
 .project-tag {
@@ -173,16 +187,32 @@ h2 {
     background-color: #95a5a6;
 }
 
-.task-delegate {
-    font-size: 0.9em;
-    color: #7f8c8d;
-    margin-bottom: 10px;
-}
-
 .task-actions {
     display: flex;
-    gap: 10px;
-    margin-top: 10px;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.btn-icon {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    background-color: white;
+    color: #2c3e50;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-icon:hover {
+    background-color: #3498db;
+    color: white;
+    border-color: #3498db;
 }
 
 /* Daily Log */
@@ -221,9 +251,10 @@ h2 {
 
 .log-note {
     margin-top: 8px;
-    color: #7f8c8d;
-    font-size: 0.95em;
-    font-style: italic;
+    color: #555;
+    font-family: 'Kalam', cursive;
+    font-size: 1em;
+    line-height: 1.5;
 }
 
 /* Summary Table */
@@ -348,6 +379,12 @@ form textarea {
     border: 1px solid #bdc3c7;
     border-radius: 4px;
     font-size: 1em;
+}
+
+form textarea[name="note"] {
+    font-family: 'Kalam', cursive;
+    font-size: 1.05em;
+    line-height: 1.6;
 }
 
 form button[type="submit"] {
