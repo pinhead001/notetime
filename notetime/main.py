@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from notetime.db import SessionLocal, engine
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
 from notetime.schemas import (
-    TaskCreate, TaskResponse,
+    TaskCreate, TaskUpdate, TaskResponse,
     WorkEntryCreate, WorkEntryResponse,
     WeekResponse, WeeklyView,
     ProjectResponse
@@ -128,10 +128,7 @@ async def create_task_api(
 @app.put("/tasks/{task_id}", response_model=TaskResponse)
 def update_task(
     task_id: int,
-    title: Optional[str] = None,
-    state: Optional[str] = None,
-    priority: Optional[int] = None,
-    delegate: Optional[str] = None,
+    task_update: TaskUpdate,
     db: Session = Depends(get_db)
 ):
     """
@@ -139,10 +136,7 @@ def update_task(
 
     Args:
         task_id: ID of task to update
-        title: New title (optional)
-        state: New state (optional)
-        priority: New priority (optional)
-        delegate: New delegate (optional)
+        task_update: Fields to update (JSON body)
 
     Returns:
         Updated task
@@ -158,21 +152,21 @@ def update_task(
         )
 
     # Update fields if provided
-    if title is not None:
-        db_task.title = title
-    if state is not None:
+    if task_update.title is not None:
+        db_task.title = task_update.title
+    if task_update.state is not None:
         # Validate state
         valid_states = [s.value for s in TaskState]
-        if state not in valid_states:
+        if task_update.state not in valid_states:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid state. Must be one of: {valid_states}"
             )
-        db_task.state = state
-    if priority is not None:
-        db_task.priority = priority
-    if delegate is not None:
-        db_task.delegate = delegate
+        db_task.state = task_update.state
+    if task_update.priority is not None:
+        db_task.priority = task_update.priority
+    if task_update.delegate is not None:
+        db_task.delegate = task_update.delegate
 
     db.commit()
     db.refresh(db_task)

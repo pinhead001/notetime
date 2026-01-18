@@ -13,6 +13,14 @@ class TaskCreate(BaseModel):
     project_id: Optional[int] = None
     delegate: Optional[str] = None
 
+
+class TaskUpdate(BaseModel):
+    """Task update schema - all fields optional"""
+    title: Optional[str] = None
+    state: Optional[str] = None
+    priority: Optional[int] = None
+    delegate: Optional[str] = None
+
 # ------------------------------
 # WorkEntry input
 # ------------------------------

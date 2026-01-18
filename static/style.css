@@ -389,3 +389,72 @@ form button[type="button"] {
     opacity: 0.6;
     pointer-events: none;
 }
+
+/* ========================================
+   Day 8: Keyboard Shortcuts & Inline Editing
+   ======================================== */
+
+/* Keyboard Hints */
+.keyboard-hints {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: #6c757d;
+}
+
+.keyboard-hints strong {
+    color: #2c3e50;
+    margin-right: 10px;
+}
+
+.keyboard-hints .hint {
+    margin-right: 15px;
+    display: inline-block;
+}
+
+kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    color: #2c3e50;
+    background-color: #e9ecef;
+    border: 1px solid #ced4da;
+    border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    margin: 0 2px;
+}
+
+/* Task Selection State */
+.task-item {
+    cursor: pointer;
+    outline: none;
+}
+
+.task-item.selected {
+    background-color: #e3f2fd;
+    border-left-color: #2196f3;
+    box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3);
+}
+
+.task-item:focus {
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
+}
+
+/* Inline Editing */
+.task-title {
+    cursor: text;
+}
+
+.inline-edit {
+    font-family: inherit;
+    font-size: inherit;
+    padding: 4px 8px;
+    border: 2px solid #2196f3;
+    border-radius: 3px;
+    outline: none;
+    background-color: white;
+}
