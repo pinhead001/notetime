@@ -107,6 +107,10 @@ h2 {
     border-left-color: #f39c12;
 }
 
+.task-waiting {
+    border-left-color: #9b59b6;
+}
+
 .task-canceled {
     border-left-color: #95a5a6;
     opacity: 0.5;
@@ -360,6 +364,39 @@ form button[type="submit"]:hover {
 form button[type="button"] {
     background-color: #95a5a6;
     color: white;
+}
+
+/* Time Entry Form */
+.time-entry-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.time-entry-group label {
+    font-size: 0.9em;
+    color: #7f8c8d;
+    font-weight: 500;
+}
+
+.time-inputs {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.time-inputs input[type="time"] {
+    flex: 1;
+}
+
+.time-inputs span {
+    color: #7f8c8d;
+    font-size: 0.9em;
+}
+
+input[readonly] {
+    background-color: #ecf0f1;
+    cursor: not-allowed;
 }
 
 /* Responsive */

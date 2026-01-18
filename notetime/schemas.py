@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 from typing import Optional, List
 from pydantic import BaseModel, field_validator, ConfigDict
 
@@ -28,6 +28,8 @@ class WorkEntryCreate(BaseModel):
     task_id: int
     date: date
     minutes: int
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
     note: str | None = None
 
     @field_validator("minutes")
@@ -100,6 +102,8 @@ class WorkEntryResponse(BaseModel):
     task_id: int
     date: date
     minutes: int
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
     note: Optional[str] = None
 
 

@@ -206,7 +206,9 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 async def create_work_entry_api(
     task_id: int = Form(...),
     date: date = Form(...),
-    minutes: int = Form(...),
+    minutes: Optional[int] = Form(None),
+    start_time: Optional[str] = Form(None),
+    end_time: Optional[str] = Form(None),
     note: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
@@ -216,7 +218,9 @@ async def create_work_entry_api(
     Args:
         task_id: ID of task
         date: Date of work
-        minutes: Minutes worked
+        minutes: Minutes worked (optional if start_time/end_time provided)
+        start_time: Start time (HH:MM format, optional)
+        end_time: End time (HH:MM format, optional)
         note: Optional note
 
     Returns:
@@ -226,11 +230,32 @@ async def create_work_entry_api(
         404: If task_id doesn't exist
         422: If validation fails (e.g., negative minutes)
     """
-    # Validate minutes
-    if minutes <= 0:
+    from datetime import datetime
+    from notetime.time_engine import duration_minutes
+
+    # Calculate minutes from start/end time if provided
+    calculated_minutes = None
+    start_time_obj = None
+    end_time_obj = None
+
+    if start_time and end_time:
+        try:
+            start_time_obj = datetime.strptime(start_time, "%H:%M").time()
+            end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+            calculated_minutes = duration_minutes(start_time_obj, end_time_obj)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid time format. Use HH:MM"
+            )
+
+    # Use calculated minutes if available, otherwise use provided minutes
+    final_minutes = calculated_minutes if calculated_minutes is not None else minutes
+
+    if final_minutes is None or final_minutes <= 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Minutes must be positive"
+            detail="Minutes must be positive or provide valid start/end times"
         )
 
     # Verify task exists
@@ -245,7 +270,9 @@ async def create_work_entry_api(
     db_entry = WorkEntry(
         task_id=task_id,
         date=date,
-        minutes=minutes,
+        minutes=final_minutes,
+        start_time=start_time_obj,
+        end_time=end_time_obj,
         note=note
     )
     db.add(db_entry)
@@ -584,17 +611,66 @@ async def log_form_partial(request: Request, week_id: int, db: Session = Depends
     tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
 
     html = f"""
-    <form hx-post="/api/work_entries" hx-target="#add-log-container">
+    <form hx-post="/api/work_entries" hx-target="#add-log-container" id="log-time-form">
         <select name="task_id" required>
             <option value="">Select task...</option>
             {"".join(f'<option value="{t.id}">{t.title}</option>' for t in tasks)}
         </select>
         <input type="date" name="date" value="{date.today()}" required>
-        <input type="number" name="minutes" placeholder="Minutes worked" min="1" required>
+
+        <div class="time-entry-group">
+            <label>Option 1: Enter time range</label>
+            <div class="time-inputs">
+                <input type="time" name="start_time" id="start_time" placeholder="Start">
+                <span>to</span>
+                <input type="time" name="end_time" id="end_time" placeholder="End">
+            </div>
+        </div>
+
+        <div class="time-entry-group">
+            <label>Option 2: Enter duration directly</label>
+            <input type="number" name="minutes" id="minutes" placeholder="Minutes worked" min="1">
+        </div>
+
         <textarea name="note" placeholder="Note (optional)" rows="2"></textarea>
         <button type="submit">Log Time</button>
         <button type="button" hx-get="/partials/log-form-cancel" hx-target="#add-log-container">Cancel</button>
     </form>
+    <script>
+        // Auto-calculate duration from start/end times
+        const startInput = document.getElementById('start_time');
+        const endInput = document.getElementById('end_time');
+        const minutesInput = document.getElementById('minutes');
+
+        function calculateDuration() {{
+            if (startInput.value && endInput.value) {{
+                const start = startInput.value.split(':');
+                const end = endInput.value.split(':');
+                const startMins = parseInt(start[0]) * 60 + parseInt(start[1]);
+                const endMins = parseInt(end[0]) * 60 + parseInt(end[1]);
+                const duration = endMins - startMins;
+
+                if (duration > 0) {{
+                    minutesInput.value = duration;
+                    minutesInput.readOnly = true;
+                }} else {{
+                    minutesInput.readOnly = false;
+                }}
+            }} else {{
+                minutesInput.readOnly = false;
+            }}
+        }}
+
+        startInput.addEventListener('change', calculateDuration);
+        endInput.addEventListener('change', calculateDuration);
+
+        minutesInput.addEventListener('input', function() {{
+            if (this.value) {{
+                startInput.value = '';
+                endInput.value = '';
+            }}
+        }});
+    </script>
     """
     return HTMLResponse(content=html)
 
@@ -626,14 +702,16 @@ async def complete_task(task_id: int, db: Session = Depends(get_db)):
 
 @app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)
 async def defer_task(task_id: int, db: Session = Depends(get_db)):
-    """Mark task for deferral (HTMX action)"""
-    # In a full implementation, this would rollover to next week
-    # For now, just mark it visually
+    """Set task state to 'waiting' (HTMX action)"""
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')
+    task.state = TaskState.WAITING.value
+    db.commit()
+
+    # Return updated task HTML
+    return HTMLResponse(content=f'<div class="task-item task-waiting">⏸ {task.title} (Waiting)</div>')
 
 
 # ============================================
