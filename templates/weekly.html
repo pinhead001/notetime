@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notetime - Week of {{ week.start_date }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </head>
@@ -16,6 +19,15 @@
             {% if week.note %}
             <p class="week-note">{{ week.note }}</p>
             {% endif %}
+            <div class="keyboard-hints">
+                <strong>Shortcuts:</strong>
+                <span class="hint"><kbd>n</kbd> New task</span>
+                <span class="hint"><kbd>t</kbd> Log time</span>
+                <span class="hint"><kbd>x</kbd> Complete</span>
+                <span class="hint"><kbd>d</kbd> Delegate</span>
+                <span class="hint"><kbd>f</kbd> Waiting</span>
+                <span class="hint"><kbd>Enter</kbd> Edit</span>
+            </div>
         </header>
 
         <!-- Weekly Priorities Section -->
@@ -25,9 +37,29 @@
             {% if tasks %}
             <div class="task-list">
                 {% for task in tasks %}
-                <div class="task-item task-{{ task.state }}" id="task-{{ task.id }}">
-                    <div class="task-header">
-                        <span class="task-title">{{ task.title }}</span>
+                <div class="task-item task-{{ task.state }}"
+                     id="task-{{ task.id }}"
+                     data-task-id="{{ task.id }}"
+                     tabindex="0">
+                    <!-- Task Actions (HTMX) on the left -->
+                    <div class="task-actions">
+                        <button hx-put="/api/tasks/{{ task.id }}/complete"
+                                hx-target="#task-{{ task.id }}"
+                                hx-swap="outerHTML"
+                                class="btn-icon"
+                                title="Complete">✓</button>
+                        <button hx-put="/api/tasks/{{ task.id }}/defer"
+                                hx-target="#task-{{ task.id }}"
+                                hx-swap="outerHTML"
+                                class="btn-icon"
+                                title="Mark as Waiting">⏸</button>
+                    </div>
+
+                    <div class="task-content">
+                        <span class="task-title" data-editable="true">{{ task.title }}</span>
+                        {% if task.delegate %}
+                        <span class="task-delegate">→ {{ task.delegate }}</span>
+                        {% endif %}
                         <span class="task-meta">
                             {% if task.project_id and projects %}
                                 {% for project in projects %}
@@ -39,24 +71,6 @@
                             <span class="priority-badge">P{{ task.priority }}</span>
                             <span class="state-badge state-{{ task.state }}">{{ task.state }}</span>
                         </span>
-                    </div>
-
-                    {% if task.delegate %}
-                    <div class="task-delegate">
-                        Delegated to: {{ task.delegate }}
-                    </div>
-                    {% endif %}
-
-                    <!-- Task Actions (HTMX) -->
-                    <div class="task-actions">
-                        <button hx-put="/api/tasks/{{ task.id }}/complete"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-small">✓ Complete</button>
-                        <button hx-put="/api/tasks/{{ task.id }}/defer"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-small">→ Defer</button>
                     </div>
                 </div>
                 {% endfor %}
@@ -180,6 +194,155 @@
                     location.reload();
                 }
             }
+        });
+
+        // ========================================
+        // Day 8: Keyboard Shortcuts & Inline Editing
+        // ========================================
+
+        let selectedTask = null;
+
+        // Task selection
+        document.querySelectorAll('.task-item').forEach(task => {
+            task.addEventListener('click', function() {
+                // Deselect previous
+                if (selectedTask) {
+                    selectedTask.classList.remove('selected');
+                }
+                // Select new
+                selectedTask = this;
+                selectedTask.classList.add('selected');
+                selectedTask.focus();
+            });
+
+            task.addEventListener('focus', function() {
+                if (selectedTask && selectedTask !== this) {
+                    selectedTask.classList.remove('selected');
+                }
+                selectedTask = this;
+                selectedTask.classList.add('selected');
+            });
+        });
+
+        // Global keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ignore if typing in input/textarea
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                return;
+            }
+
+            const key = e.key.toLowerCase();
+
+            // n = New task
+            if (key === 'n') {
+                e.preventDefault();
+                document.querySelector('#add-task-container button')?.click();
+            }
+
+            // t = Log time
+            if (key === 't') {
+                e.preventDefault();
+                document.querySelector('#add-log-container button')?.click();
+            }
+
+            // Shortcuts requiring a selected task
+            if (!selectedTask) return;
+
+            const taskId = selectedTask.dataset.taskId;
+
+            // x = Complete task
+            if (key === 'x') {
+                e.preventDefault();
+                htmx.ajax('PUT', `/api/tasks/${taskId}/complete`, {
+                    target: `#task-${taskId}`,
+                    swap: 'outerHTML'
+                }).then(() => {
+                    selectedTask = null;
+                });
+            }
+
+            // f = Defer task
+            if (key === 'f') {
+                e.preventDefault();
+                htmx.ajax('PUT', `/api/tasks/${taskId}/defer`, {
+                    target: `#task-${taskId}`,
+                    swap: 'outerHTML'
+                }).then(() => {
+                    selectedTask = null;
+                });
+            }
+
+            // d = Delegate task
+            if (key === 'd') {
+                e.preventDefault();
+                const delegateTo = prompt('Delegate to:');
+                if (delegateTo) {
+                    fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ delegate: delegateTo, state: 'delegated' })
+                    }).then(() => location.reload());
+                }
+            }
+
+            // Enter = Edit task title
+            if (key === 'enter') {
+                e.preventDefault();
+                const titleSpan = selectedTask.querySelector('.task-title');
+                enableInlineEdit(titleSpan, taskId);
+            }
+        });
+
+        // Inline editing for task titles
+        function enableInlineEdit(element, taskId) {
+            const currentText = element.textContent;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentText;
+            input.className = 'inline-edit';
+            input.style.width = '100%';
+
+            // Save on Enter or blur
+            const save = () => {
+                const newTitle = input.value.trim();
+                if (newTitle && newTitle !== currentText) {
+                    fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title: newTitle })
+                    }).then(() => {
+                        element.textContent = newTitle;
+                    });
+                } else {
+                    element.textContent = currentText;
+                }
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    save();
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    element.textContent = currentText;
+                }
+            });
+
+            element.textContent = '';
+            element.appendChild(input);
+            input.focus();
+            input.select();
+        }
+
+        // Double-click to edit
+        document.querySelectorAll('.task-title[data-editable="true"]').forEach(title => {
+            title.addEventListener('dblclick', function() {
+                const taskItem = this.closest('.task-item');
+                const taskId = taskItem.dataset.taskId;
+                enableInlineEdit(this, taskId);
+            });
         });
     </script>
 </body>

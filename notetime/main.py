@@ -13,8 +13,10 @@ API will be available at:
 from datetime import date, timedelta
 from typing import List, Optional
 from pathlib import Path
+from io import StringIO
+import csv
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -23,7 +25,7 @@ from sqlalchemy.orm import Session
 from notetime.db import SessionLocal, engine
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
 from notetime.schemas import (
-    TaskCreate, TaskResponse,
+    TaskCreate, TaskUpdate, TaskResponse,
     WorkEntryCreate, WorkEntryResponse,
     WeekResponse, WeeklyView,
     ProjectResponse
@@ -128,10 +130,7 @@ async def create_task_api(
 @app.put("/tasks/{task_id}", response_model=TaskResponse)
 def update_task(
     task_id: int,
-    title: Optional[str] = None,
-    state: Optional[str] = None,
-    priority: Optional[int] = None,
-    delegate: Optional[str] = None,
+    task_update: TaskUpdate,
     db: Session = Depends(get_db)
 ):
     """
@@ -139,10 +138,7 @@ def update_task(
 
     Args:
         task_id: ID of task to update
-        title: New title (optional)
-        state: New state (optional)
-        priority: New priority (optional)
-        delegate: New delegate (optional)
+        task_update: Fields to update (JSON body)
 
     Returns:
         Updated task
@@ -158,21 +154,21 @@ def update_task(
         )
 
     # Update fields if provided
-    if title is not None:
-        db_task.title = title
-    if state is not None:
+    if task_update.title is not None:
+        db_task.title = task_update.title
+    if task_update.state is not None:
         # Validate state
         valid_states = [s.value for s in TaskState]
-        if state not in valid_states:
+        if task_update.state not in valid_states:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid state. Must be one of: {valid_states}"
             )
-        db_task.state = state
-    if priority is not None:
-        db_task.priority = priority
-    if delegate is not None:
-        db_task.delegate = delegate
+        db_task.state = task_update.state
+    if task_update.priority is not None:
+        db_task.priority = task_update.priority
+    if task_update.delegate is not None:
+        db_task.delegate = task_update.delegate
 
     db.commit()
     db.refresh(db_task)
@@ -212,7 +208,9 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 async def create_work_entry_api(
     task_id: int = Form(...),
     date: date = Form(...),
-    minutes: int = Form(...),
+    minutes: Optional[int] = Form(None),
+    start_time: Optional[str] = Form(None),
+    end_time: Optional[str] = Form(None),
     note: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
@@ -222,7 +220,9 @@ async def create_work_entry_api(
     Args:
         task_id: ID of task
         date: Date of work
-        minutes: Minutes worked
+        minutes: Minutes worked (optional if start_time/end_time provided)
+        start_time: Start time (HH:MM format, optional)
+        end_time: End time (HH:MM format, optional)
         note: Optional note
 
     Returns:
@@ -232,11 +232,32 @@ async def create_work_entry_api(
         404: If task_id doesn't exist
         422: If validation fails (e.g., negative minutes)
     """
-    # Validate minutes
-    if minutes <= 0:
+    from datetime import datetime
+    from notetime.time_engine import duration_minutes
+
+    # Calculate minutes from start/end time if provided
+    calculated_minutes = None
+    start_time_obj = None
+    end_time_obj = None
+
+    if start_time and end_time:
+        try:
+            start_time_obj = datetime.strptime(start_time, "%H:%M").time()
+            end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+            calculated_minutes = duration_minutes(start_time_obj, end_time_obj)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid time format. Use HH:MM"
+            )
+
+    # Use calculated minutes if available, otherwise use provided minutes
+    final_minutes = calculated_minutes if calculated_minutes is not None else minutes
+
+    if final_minutes is None or final_minutes <= 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Minutes must be positive"
+            detail="Minutes must be positive or provide valid start/end times"
         )
 
     # Verify task exists
@@ -251,7 +272,9 @@ async def create_work_entry_api(
     db_entry = WorkEntry(
         task_id=task_id,
         date=date,
-        minutes=minutes,
+        minutes=final_minutes,
+        start_time=start_time_obj,
+        end_time=end_time_obj,
         note=note
     )
     db.add(db_entry)
@@ -409,6 +432,122 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
         work_entries=[WorkEntryResponse.model_validate(e) for e in work_entries],
         projects=[ProjectResponse.model_validate(p) for p in projects],
         summary=summary
+    )
+
+
+@app.get("/api/weeks/{week_id}/export")
+def export_week_csv(week_id: int, db: Session = Depends(get_db)):
+    """
+    Export week data to CSV format.
+
+    Args:
+        week_id: ID of week to export
+
+    Returns:
+        CSV file with tasks, work entries, and summary
+
+    Raises:
+        404: If week not found
+    """
+    # Get week data
+    week = db.get(Week, week_id)
+    if not week:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+
+    # Get all data
+    tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
+
+    if tasks:
+        task_ids = [task.id for task in tasks]
+        work_entries = db.scalars(
+            select(WorkEntry).where(WorkEntry.task_id.in_(task_ids))
+        ).all()
+    else:
+        work_entries = []
+
+    # Get projects
+    project_ids = list(set(task.project_id for task in tasks if task.project_id is not None))
+    projects_map = {}
+    if project_ids:
+        projects = db.scalars(select(Project).where(Project.id.in_(project_ids))).all()
+        projects_map = {p.id: p.name for p in projects}
+
+    # Generate summary
+    summary = generate_weekly_summary(week_id, db)
+
+    # Create CSV in memory
+    output = StringIO()
+    writer = csv.writer(output)
+
+    # Week header
+    writer.writerow(["Notetime - Weekly Export"])
+    writer.writerow(["Week Starting:", week.start_date])
+    if week.note:
+        writer.writerow(["Note:", week.note])
+    writer.writerow([])
+
+    # Tasks section
+    writer.writerow(["TASKS"])
+    writer.writerow(["Title", "Project", "State", "Priority", "Delegate"])
+    for task in tasks:
+        project_name = projects_map.get(task.project_id, "")
+        writer.writerow([
+            task.title,
+            project_name,
+            task.state,
+            task.priority,
+            task.delegate or ""
+        ])
+    writer.writerow([])
+
+    # Work entries section
+    writer.writerow(["WORK ENTRIES"])
+    writer.writerow(["Task", "Date", "Start Time", "End Time", "Minutes", "Hours", "Note"])
+    for entry in work_entries:
+        task = next((t for t in tasks if t.id == entry.task_id), None)
+        task_title = task.title if task else f"Task {entry.task_id}"
+        start_time_str = entry.start_time.strftime("%H:%M") if entry.start_time else ""
+        end_time_str = entry.end_time.strftime("%H:%M") if entry.end_time else ""
+        writer.writerow([
+            task_title,
+            entry.date,
+            start_time_str,
+            end_time_str,
+            entry.minutes,
+            round(entry.minutes / 60, 2),
+            entry.note or ""
+        ])
+    writer.writerow([])
+
+    # Summary section
+    writer.writerow(["WEEKLY SUMMARY"])
+    writer.writerow(["Project", "Task", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Total"])
+    for project_name, tasks_data in summary.items():
+        for task_name, days in tasks_data.items():
+            writer.writerow([
+                project_name,
+                task_name,
+                days.get('Mon', '-'),
+                days.get('Tue', '-'),
+                days.get('Wed', '-'),
+                days.get('Thu', '-'),
+                days.get('Fri', '-'),
+                days.get('Sat', '-'),
+                days.get('Sun', '-'),
+                days.get('Total', 0)
+            ])
+
+    # Prepare response
+    output.seek(0)
+    filename = f"notetime_week_{week.start_date}.csv"
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 
@@ -590,17 +729,66 @@ async def log_form_partial(request: Request, week_id: int, db: Session = Depends
     tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
 
     html = f"""
-    <form hx-post="/api/work_entries" hx-target="#add-log-container">
+    <form hx-post="/api/work_entries" hx-target="#add-log-container" id="log-time-form">
         <select name="task_id" required>
             <option value="">Select task...</option>
             {"".join(f'<option value="{t.id}">{t.title}</option>' for t in tasks)}
         </select>
         <input type="date" name="date" value="{date.today()}" required>
-        <input type="number" name="minutes" placeholder="Minutes worked" min="1" required>
+
+        <div class="time-entry-group">
+            <label>Option 1: Enter time range</label>
+            <div class="time-inputs">
+                <input type="time" name="start_time" id="start_time" placeholder="Start">
+                <span>to</span>
+                <input type="time" name="end_time" id="end_time" placeholder="End">
+            </div>
+        </div>
+
+        <div class="time-entry-group">
+            <label>Option 2: Enter duration directly</label>
+            <input type="number" name="minutes" id="minutes" placeholder="Minutes worked" min="1">
+        </div>
+
         <textarea name="note" placeholder="Note (optional)" rows="2"></textarea>
         <button type="submit">Log Time</button>
         <button type="button" hx-get="/partials/log-form-cancel" hx-target="#add-log-container">Cancel</button>
     </form>
+    <script>
+        // Auto-calculate duration from start/end times
+        const startInput = document.getElementById('start_time');
+        const endInput = document.getElementById('end_time');
+        const minutesInput = document.getElementById('minutes');
+
+        function calculateDuration() {{
+            if (startInput.value && endInput.value) {{
+                const start = startInput.value.split(':');
+                const end = endInput.value.split(':');
+                const startMins = parseInt(start[0]) * 60 + parseInt(start[1]);
+                const endMins = parseInt(end[0]) * 60 + parseInt(end[1]);
+                const duration = endMins - startMins;
+
+                if (duration > 0) {{
+                    minutesInput.value = duration;
+                    minutesInput.readOnly = true;
+                }} else {{
+                    minutesInput.readOnly = false;
+                }}
+            }} else {{
+                minutesInput.readOnly = false;
+            }}
+        }}
+
+        startInput.addEventListener('change', calculateDuration);
+        endInput.addEventListener('change', calculateDuration);
+
+        minutesInput.addEventListener('input', function() {{
+            if (this.value) {{
+                startInput.value = '';
+                endInput.value = '';
+            }}
+        }});
+    </script>
     """
     return HTMLResponse(content=html)
 
@@ -632,14 +820,16 @@ async def complete_task(task_id: int, db: Session = Depends(get_db)):
 
 @app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)
 async def defer_task(task_id: int, db: Session = Depends(get_db)):
-    """Mark task for deferral (HTMX action)"""
-    # In a full implementation, this would rollover to next week
-    # For now, just mark it visually
+    """Set task state to 'waiting' (HTMX action)"""
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')
+    task.state = TaskState.WAITING.value
+    db.commit()
+
+    # Return updated task HTML
+    return HTMLResponse(content=f'<div class="task-item task-waiting">⏸ {task.title} (Waiting)</div>')
 
 
 # ============================================

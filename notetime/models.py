@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, time
 from typing import Optional
 from enum import Enum
-from sqlalchemy import Integer, String, Date, Boolean, ForeignKey
+from sqlalchemy import Integer, String, Date, Time, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from notetime.db import Base
 
@@ -11,6 +11,7 @@ from notetime.db import Base
 class TaskState(str, Enum):
     """Task lifecycle states per rules.md"""
     ACTIVE = "active"
+    WAITING = "waiting"
     DELEGATED = "delegated"
     COMPLETED = "completed"
     CANCELED = "canceled"
@@ -80,6 +81,9 @@ class WorkEntry(Base):
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    start_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True, default=None)
+    end_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True, default=None)
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
     task: Mapped["Task"] = relationship("Task", back_populates="work_entries", init=False)

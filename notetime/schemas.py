@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 from typing import Optional, List
 from pydantic import BaseModel, field_validator, ConfigDict
 
@@ -13,6 +13,14 @@ class TaskCreate(BaseModel):
     project_id: Optional[int] = None
     delegate: Optional[str] = None
 
+
+class TaskUpdate(BaseModel):
+    """Task update schema - all fields optional"""
+    title: Optional[str] = None
+    state: Optional[str] = None
+    priority: Optional[int] = None
+    delegate: Optional[str] = None
+
 # ------------------------------
 # WorkEntry input
 # ------------------------------
@@ -20,6 +28,8 @@ class WorkEntryCreate(BaseModel):
     task_id: int
     date: date
     minutes: int
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
     note: str | None = None
 
     @field_validator("minutes")
@@ -92,6 +102,8 @@ class WorkEntryResponse(BaseModel):
     task_id: int
     date: date
     minutes: int
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
     note: Optional[str] = None
 
 
