@@ -23,6 +23,7 @@
                 <strong>Shortcuts:</strong>
                 <span class="hint"><kbd>Ctrl+N</kbd> New task</span>
                 <span class="hint"><kbd>Ctrl+T</kbd> Log time</span>
+                <span class="hint"><kbd>Ctrl+P</kbd> Projects</span>
                 <span class="hint"><kbd>Ctrl+X</kbd> Complete</span>
                 <span class="hint"><kbd>Ctrl+D</kbd> Delegate</span>
                 <span class="hint"><kbd>Ctrl+F</kbd> Waiting</span>
@@ -174,6 +175,7 @@
         <footer>
             <p>Notetime MVP - Faster than paper</p>
             <p class="footer-links">
+                <a href="/projects/manage">Manage Projects</a> |
                 <a href="/api/weeks/{{ week.id }}/export">Export CSV</a> |
                 <a href="/docs">API Docs</a>
             </p>
@@ -257,6 +259,12 @@
             if (key === 't') {
                 e.preventDefault();
                 document.querySelector('#add-log-container button')?.click();
+            }
+
+            // Ctrl+P = Manage projects
+            if (key === 'p') {
+                e.preventDefault();
+                window.location.href = '/projects/manage';
             }
 
             // Shortcuts requiring a selected task

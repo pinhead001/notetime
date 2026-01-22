@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notetime - Projects</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>Notetime - Projects</h1>
+            <div class="header-actions">
+                <a href="/" class="btn-secondary">← Back to Weekly View</a>
+                <button id="new-project-btn" class="btn-primary">+ New Project</button>
+            </div>
+        </header>
+
+        <!-- Filter Tabs -->
+        <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all">All Projects</button>
+            <button class="filter-tab" data-filter="active">Active Only</button>
+            <button class="filter-tab" data-filter="archived">Archived Only</button>
+        </div>
+
+        <!-- Projects List -->
+        <section class="projects-section">
+            <div class="projects-list" id="projects-list">
+                {% for project in projects %}
+                <div class="project-item {% if not project.is_active %}project-archived{% endif %}"
+                     data-status="{{ 'active' if project.is_active else 'archived' }}">
+                    <div class="project-info">
+                        <span class="project-name">{{ project.name }}</span>
+                        <span class="project-status-badge {{ 'badge-active' if project.is_active else 'badge-archived' }}">
+                            {{ 'Active' if project.is_active else 'Archived' }}
+                        </span>
+                    </div>
+                    <div class="project-actions">
+                        <button class="btn-toggle"
+                                onclick="toggleProjectStatus({{ project.id }}, {{ 'false' if project.is_active else 'true' }})">
+                            {{ 'Archive' if project.is_active else 'Activate' }}
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Create Project Dialog -->
+        <div id="create-project-dialog" class="dialog-hidden">
+            <div class="dialog-overlay"></div>
+            <div class="dialog-content">
+                <h3>Create New Project</h3>
+                <input type="text" id="new-project-name-input" placeholder="Project name" autocomplete="off">
+                <div class="dialog-actions">
+                    <button id="confirm-create" class="btn-primary">Create</button>
+                    <button id="cancel-create" class="btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Filter functionality
+        const filterTabs = document.querySelectorAll('.filter-tab');
+        const projectItems = document.querySelectorAll('.project-item');
+
+        filterTabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Update active tab
+                filterTabs.forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+
+                const filter = this.dataset.filter;
+
+                // Filter projects
+                projectItems.forEach(item => {
+                    const status = item.dataset.status;
+                    if (filter === 'all') {
+                        item.style.display = 'flex';
+                    } else if (filter === 'active' && status === 'active') {
+                        item.style.display = 'flex';
+                    } else if (filter === 'archived' && status === 'archived') {
+                        item.style.display = 'flex';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            });
+        });
+
+        // Toggle project status
+        async function toggleProjectStatus(projectId, newStatus) {
+            try {
+                const response = await fetch(`/api/projects/${projectId}?is_active=${newStatus}`, {
+                    method: 'PUT'
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Failed to update project status');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to update project status');
+            }
+        }
+
+        // Create project dialog
+        const dialog = document.getElementById('create-project-dialog');
+        const newProjectBtn = document.getElementById('new-project-btn');
+        const newProjectInput = document.getElementById('new-project-name-input');
+        const confirmBtn = document.getElementById('confirm-create');
+        const cancelBtn = document.getElementById('cancel-create');
+
+        newProjectBtn.addEventListener('click', () => {
+            dialog.classList.remove('dialog-hidden');
+            newProjectInput.focus();
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            dialog.classList.add('dialog-hidden');
+            newProjectInput.value = '';
+        });
+
+        confirmBtn.addEventListener('click', createProject);
+
+        newProjectInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                createProject();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                dialog.classList.add('dialog-hidden');
+                newProjectInput.value = '';
+            }
+        });
+
+        async function createProject() {
+            const name = newProjectInput.value.trim();
+            if (!name) return;
+
+            try {
+                const response = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, is_active: true })
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to create project');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to create project');
+            }
+        }
+
+        // Ctrl+P shortcut to create new project
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key.toLowerCase() === 'p') {
+                e.preventDefault();
+                newProjectBtn.click();
+            }
+        });
+    </script>
+</body>
+</html>
