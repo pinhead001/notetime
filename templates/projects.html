@@ -162,9 +162,12 @@
             }
         }
 
-        // Ctrl+P shortcut to create new project
+        // 'p' shortcut to create new project (but not when typing in input)
         document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key.toLowerCase() === 'p') {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                return;
+            }
+            if (e.key.toLowerCase() === 'p') {
                 e.preventDefault();
                 newProjectBtn.click();
             }

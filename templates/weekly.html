@@ -21,13 +21,24 @@
             {% endif %}
             <div class="keyboard-hints">
                 <strong>Shortcuts:</strong>
-                <span class="hint"><kbd>Ctrl+N</kbd> New task</span>
-                <span class="hint"><kbd>Ctrl+T</kbd> Log time</span>
-                <span class="hint"><kbd>Ctrl+P</kbd> Projects</span>
-                <span class="hint"><kbd>Ctrl+X</kbd> Complete</span>
-                <span class="hint"><kbd>Ctrl+D</kbd> Delegate</span>
-                <span class="hint"><kbd>Ctrl+F</kbd> Waiting</span>
-                <span class="hint"><kbd>Enter</kbd> Edit</span>
+                <button class="shortcut-btn" onclick="triggerNewTask()" title="Press 'n' for New task">
+                    <kbd>n</kbd> New task
+                </button>
+                <button class="shortcut-btn" onclick="triggerLogTime()" title="Press 't' for Log time">
+                    <kbd>t</kbd> Log time
+                </button>
+                <button class="shortcut-btn" onclick="window.location.href='/projects/manage'" title="Press 'p' for Projects">
+                    <kbd>p</kbd> Projects
+                </button>
+                <button class="shortcut-btn" onclick="triggerComplete()" title="Press 'x' to Complete selected task">
+                    <kbd>x</kbd> Complete
+                </button>
+                <button class="shortcut-btn" onclick="triggerDelegate()" title="Press 'd' to Delegate selected task">
+                    <kbd>d</kbd> Delegate
+                </button>
+                <button class="shortcut-btn" onclick="triggerWaiting()" title="Press 'f' to mark selected task as Waiting">
+                    <kbd>f</kbd> Waiting
+                </button>
             </div>
         </header>
 
@@ -226,42 +237,84 @@
             });
         });
 
+        // Trigger functions for shortcut buttons
+        function triggerNewTask() {
+            document.querySelector('#add-task-container button')?.click();
+            setTimeout(() => {
+                document.querySelector('[name="title"]')?.focus();
+            }, 100);
+        }
+
+        function triggerLogTime() {
+            document.querySelector('#add-log-container button')?.click();
+        }
+
+        function triggerComplete() {
+            if (!selectedTask) {
+                alert('Please select a task first by clicking on it');
+                return;
+            }
+            const taskId = selectedTask.dataset.taskId;
+            htmx.ajax('PUT', `/api/tasks/${taskId}/complete`, {
+                target: `#task-${taskId}`,
+                swap: 'outerHTML'
+            }).then(() => {
+                selectedTask = null;
+            });
+        }
+
+        function triggerDelegate() {
+            if (!selectedTask) {
+                alert('Please select a task first by clicking on it');
+                return;
+            }
+            const taskId = selectedTask.dataset.taskId;
+            const delegateTo = prompt('Delegate to:');
+            if (delegateTo) {
+                fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ delegate: delegateTo, state: 'delegated' })
+                }).then(() => location.reload());
+            }
+        }
+
+        function triggerWaiting() {
+            if (!selectedTask) {
+                alert('Please select a task first by clicking on it');
+                return;
+            }
+            const taskId = selectedTask.dataset.taskId;
+            htmx.ajax('PUT', `/api/tasks/${taskId}/defer`, {
+                target: `#task-${taskId}`,
+                swap: 'outerHTML'
+            }).then(() => {
+                selectedTask = null;
+            });
+        }
+
         // Global keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Check for Ctrl key combinations
-            if (!e.ctrlKey) {
-                // Allow Enter for inline editing when task is selected
-                if (e.key === 'Enter' && selectedTask &&
-                    e.target.tagName !== 'INPUT' &&
-                    e.target.tagName !== 'TEXTAREA' &&
-                    e.target.tagName !== 'SELECT') {
-                    e.preventDefault();
-                    const taskId = selectedTask.dataset.taskId;
-                    const titleSpan = selectedTask.querySelector('.task-title');
-                    enableInlineEdit(titleSpan, taskId);
-                }
+            // Ignore if typing in input/textarea/select
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
                 return;
             }
 
             const key = e.key.toLowerCase();
 
-            // Ctrl+N = New task
+            // n = New task
             if (key === 'n') {
                 e.preventDefault();
-                document.querySelector('#add-task-container button')?.click();
-                // Auto-focus on task title field after form loads
-                setTimeout(() => {
-                    document.querySelector('[name="title"]')?.focus();
-                }, 100);
+                triggerNewTask();
             }
 
-            // Ctrl+T = Log time
+            // t = Log time
             if (key === 't') {
                 e.preventDefault();
-                document.querySelector('#add-log-container button')?.click();
+                triggerLogTime();
             }
 
-            // Ctrl+P = Manage projects
+            // p = Manage projects
             if (key === 'p') {
                 e.preventDefault();
                 window.location.href = '/projects/manage';
@@ -270,41 +323,22 @@
             // Shortcuts requiring a selected task
             if (!selectedTask) return;
 
-            const taskId = selectedTask.dataset.taskId;
-
-            // Ctrl+X = Complete task
+            // x = Complete task
             if (key === 'x') {
                 e.preventDefault();
-                htmx.ajax('PUT', `/api/tasks/${taskId}/complete`, {
-                    target: `#task-${taskId}`,
-                    swap: 'outerHTML'
-                }).then(() => {
-                    selectedTask = null;
-                });
+                triggerComplete();
             }
 
-            // Ctrl+F = Waiting task
+            // f = Waiting task
             if (key === 'f') {
                 e.preventDefault();
-                htmx.ajax('PUT', `/api/tasks/${taskId}/defer`, {
-                    target: `#task-${taskId}`,
-                    swap: 'outerHTML'
-                }).then(() => {
-                    selectedTask = null;
-                });
+                triggerWaiting();
             }
 
-            // Ctrl+D = Delegate task
+            // d = Delegate task
             if (key === 'd') {
                 e.preventDefault();
-                const delegateTo = prompt('Delegate to:');
-                if (delegateTo) {
-                    fetch(`/api/tasks/${taskId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ delegate: delegateTo, state: 'delegated' })
-                    }).then(() => location.reload());
-                }
+                triggerDelegate();
             }
         });
 
