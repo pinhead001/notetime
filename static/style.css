@@ -532,3 +532,115 @@ kbd {
     outline: none;
     background-color: white;
 }
+
+/* ========================================
+   Project Input & Dialog
+   ======================================== */
+
+.project-input-container {
+    position: relative;
+}
+
+#project-search {
+    width: 100%;
+}
+
+/* Dialog Styles */
+.dialog-hidden {
+    display: none !important;
+}
+
+#project-create-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dialog-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.dialog-content {
+    position: relative;
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    max-width: 500px;
+    width: 90%;
+    z-index: 1001;
+}
+
+.dialog-content h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #2c3e50;
+}
+
+.dialog-content p {
+    margin-bottom: 15px;
+    color: #7f8c8d;
+    font-size: 0.95em;
+}
+
+#new-project-name {
+    color: #3498db;
+    font-weight: 600;
+}
+
+#edit-project-name {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+.edit-name-hidden {
+    display: none !important;
+}
+
+.dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.dialog-actions button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #2980b9;
+}
+
+.dialog-actions button:not(.btn-primary) {
+    background-color: #ecf0f1;
+    color: #2c3e50;
+}
+
+.dialog-actions button:not(.btn-primary):hover {
+    background-color: #bdc3c7;
+}

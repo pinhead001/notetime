@@ -556,9 +556,9 @@ def export_week_csv(week_id: int, db: Session = Depends(get_db)):
 # ============================================
 
 @app.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-def create_project(name: str, is_active: bool = True, db: Session = Depends(get_db)):
+def create_project(name: str = Form(None), is_active: bool = Form(True), db: Session = Depends(get_db)):
     """
-    Create a new project.
+    Create a new project (form data).
 
     Args:
         name: Project name (must be unique)
@@ -570,6 +570,49 @@ def create_project(name: str, is_active: bool = True, db: Session = Depends(get_
     Raises:
         400: If project with this name already exists
     """
+    # Check if project already exists
+    existing = db.scalars(
+        select(Project).where(Project.name == name)
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Project '{name}' already exists"
+        )
+
+    # Create project
+    db_project = Project(name=name, is_active=is_active)
+    db.add(db_project)
+    db.commit()
+    db.refresh(db_project)
+
+    return db_project
+
+
+@app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project_api(project: dict, db: Session = Depends(get_db)):
+    """
+    Create a new project (JSON body).
+
+    Args:
+        project: JSON with name and is_active fields
+
+    Returns:
+        Created project with ID
+
+    Raises:
+        400: If project with this name already exists
+    """
+    name = project.get("name")
+    is_active = project.get("is_active", True)
+
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Project name is required"
+        )
+
     # Check if project already exists
     existing = db.scalars(
         select(Project).where(Project.name == name)
@@ -694,16 +737,29 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
 @app.get("/partials/task-form", response_class=HTMLResponse)
 async def task_form_partial(request: Request, week_id: int, db: Session = Depends(get_db)):
     """Return task creation form (HTMX partial)"""
+    import json
     projects = db.scalars(select(Project).where(Project.is_active == True)).all()
+    projects_json = json.dumps([{"id": p.id, "name": p.name} for p in projects])
 
     html = f"""
-    <form hx-post="/api/tasks" hx-target="#add-task-container">
+    <form hx-post="/api/tasks" hx-target="#add-task-container" id="task-form">
         <input type="hidden" name="week_id" value="{week_id}">
         <input type="text" name="title" placeholder="Task title" required>
-        <select name="project_id">
-            <option value="">No project</option>
-            {"".join(f'<option value="{p.id}">{p.name}</option>' for p in projects)}
-        </select>
+
+        <div class="project-input-container">
+            <input
+                type="text"
+                id="project-search"
+                placeholder="Type to search or create project..."
+                autocomplete="off"
+                list="project-options">
+            <datalist id="project-options">
+                <option value="">No project</option>
+                {"".join(f'<option value="{p.name}" data-id="{p.id}">' for p in projects)}
+            </datalist>
+            <input type="hidden" name="project_id" id="project-id-field" value="">
+        </div>
+
         <select name="priority">
             <option value="1">Priority 1 (High)</option>
             <option value="2">Priority 2</option>
@@ -712,6 +768,161 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
         <button type="submit">Add Task</button>
         <button type="button" hx-get="/partials/task-form-cancel" hx-target="#add-task-container">Cancel</button>
     </form>
+
+    <!-- Project creation dialog -->
+    <div id="project-create-dialog" class="dialog-hidden">
+        <div class="dialog-overlay"></div>
+        <div class="dialog-content">
+            <h3>Create New Project?</h3>
+            <p>Project "<span id="new-project-name"></span>" doesn't exist.</p>
+            <p><kbd>Enter</kbd> to create &nbsp;|&nbsp; <kbd>Tab</kbd> to edit name &nbsp;|&nbsp; <kbd>Esc</kbd> to cancel</p>
+            <input type="text" id="edit-project-name" class="edit-name-hidden">
+            <div class="dialog-actions">
+                <button id="confirm-create-project" class="btn-primary">Create Project</button>
+                <button id="cancel-create-project">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const projects = {projects_json};
+        const projectSearch = document.getElementById('project-search');
+        const projectIdField = document.getElementById('project-id-field');
+        const dialog = document.getElementById('project-create-dialog');
+        const newProjectNameSpan = document.getElementById('new-project-name');
+        const editProjectNameInput = document.getElementById('edit-project-name');
+        const confirmBtn = document.getElementById('confirm-create-project');
+        const cancelBtn = document.getElementById('cancel-create-project');
+
+        let pendingProjectName = '';
+        let editMode = false;
+
+        // Update hidden field when selecting from datalist
+        projectSearch.addEventListener('input', function() {{
+            const value = this.value.trim();
+
+            if (!value) {{
+                projectIdField.value = '';
+                return;
+            }}
+
+            // Check if it matches an existing project
+            const match = projects.find(p => p.name.toLowerCase() === value.toLowerCase());
+            if (match) {{
+                projectIdField.value = match.id;
+            }} else {{
+                projectIdField.value = '';
+            }}
+        }});
+
+        // Handle Enter key on project search
+        projectSearch.addEventListener('keydown', function(e) {{
+            if (e.key === 'Enter') {{
+                e.preventDefault();
+                const value = this.value.trim();
+
+                if (!value) return;
+
+                // Check if it matches an existing project
+                const match = projects.find(p => p.name.toLowerCase() === value.toLowerCase());
+
+                if (!match) {{
+                    // Show create dialog
+                    pendingProjectName = value;
+                    newProjectNameSpan.textContent = value;
+                    dialog.classList.remove('dialog-hidden');
+                    editMode = false;
+                    editProjectNameInput.classList.add('edit-name-hidden');
+                    newProjectNameSpan.style.display = 'inline';
+                    confirmBtn.focus();
+                }}
+            }}
+        }});
+
+        // Dialog keyboard navigation
+        dialog.addEventListener('keydown', function(e) {{
+            if (e.key === 'Escape') {{
+                e.preventDefault();
+                closeDialog();
+            }} else if (e.key === 'Enter' && !editMode) {{
+                e.preventDefault();
+                createProject();
+            }} else if (e.key === 'Tab' && !editMode && e.target === confirmBtn) {{
+                e.preventDefault();
+                // Enter edit mode
+                editMode = true;
+                editProjectNameInput.value = pendingProjectName;
+                editProjectNameInput.classList.remove('edit-name-hidden');
+                newProjectNameSpan.style.display = 'none';
+                editProjectNameInput.focus();
+                editProjectNameInput.select();
+            }}
+        }});
+
+        // Handle edit input
+        editProjectNameInput.addEventListener('keydown', function(e) {{
+            if (e.key === 'Enter') {{
+                e.preventDefault();
+                pendingProjectName = this.value.trim();
+                createProject();
+            }} else if (e.key === 'Tab') {{
+                e.preventDefault();
+                closeDialog();
+            }}
+        }});
+
+        confirmBtn.addEventListener('click', createProject);
+        cancelBtn.addEventListener('click', closeDialog);
+
+        async function createProject() {{
+            if (!pendingProjectName) return;
+
+            try {{
+                const response = await fetch('/api/projects', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        name: pendingProjectName,
+                        is_active: true
+                    }})
+                }});
+
+                if (response.ok) {{
+                    const newProject = await response.json();
+
+                    // Add to projects list
+                    projects.push(newProject);
+
+                    // Update form
+                    projectSearch.value = newProject.name;
+                    projectIdField.value = newProject.id;
+
+                    // Update datalist
+                    const datalist = document.getElementById('project-options');
+                    const option = document.createElement('option');
+                    option.value = newProject.name;
+                    option.setAttribute('data-id', newProject.id);
+                    datalist.appendChild(option);
+
+                    closeDialog();
+
+                    // Focus back on form
+                    document.querySelector('[name="priority"]').focus();
+                }}
+            }} catch (error) {{
+                console.error('Error creating project:', error);
+                alert('Failed to create project');
+            }}
+        }}
+
+        function closeDialog() {{
+            dialog.classList.add('dialog-hidden');
+            editMode = false;
+            editProjectNameInput.classList.add('edit-name-hidden');
+            newProjectNameSpan.style.display = 'inline';
+            projectSearch.focus();
+        }}
+    </script>
     """
     return HTMLResponse(content=html)
 
