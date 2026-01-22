@@ -1048,11 +1048,19 @@ async def log_form_partial(request: Request, week_id: int, db: Session = Depends
         <input type="date" name="date" value="{date.today()}" required>
 
         <div class="time-entry-group">
-            <label>Option 1: Enter time range</label>
+            <label>Option 1: Enter time range (e.g., type "9" for 09:00)</label>
             <div class="time-inputs">
-                <input type="time" name="start_time" id="start_time" placeholder="Start">
+                <input type="text"
+                       id="start_time_display"
+                       placeholder="Start (e.g., 9 or 9:30)"
+                       autocomplete="off">
+                <input type="hidden" name="start_time" id="start_time">
                 <span>to</span>
-                <input type="time" name="end_time" id="end_time" placeholder="End">
+                <input type="text"
+                       id="end_time_display"
+                       placeholder="End (e.g., 17 or 17:30)"
+                       autocomplete="off">
+                <input type="hidden" name="end_time" id="end_time">
             </div>
         </div>
 
@@ -1066,15 +1074,89 @@ async def log_form_partial(request: Request, week_id: int, db: Session = Depends
         <button type="button" hx-get="/partials/log-form-cancel" hx-target="#add-log-container">Cancel</button>
     </form>
     <script>
-        // Auto-calculate duration from start/end times
-        const startInput = document.getElementById('start_time');
-        const endInput = document.getElementById('end_time');
+        const startDisplay = document.getElementById('start_time_display');
+        const endDisplay = document.getElementById('end_time_display');
+        const startHidden = document.getElementById('start_time');
+        const endHidden = document.getElementById('end_time');
         const minutesInput = document.getElementById('minutes');
 
+        // Smart time formatting function
+        function formatTimeInput(input) {{
+            let value = input.value.trim();
+            if (!value) return '';
+
+            // Remove any non-digit/colon characters
+            value = value.replace(/[^0-9:]/g, '');
+
+            // If just a number (hour only)
+            if (!value.includes(':')) {{
+                let hour = parseInt(value);
+                if (isNaN(hour)) return '';
+
+                // Default to :00 minutes
+                if (hour >= 0 && hour <= 23) {{
+                    return hour.toString().padStart(2, '0') + ':00';
+                }}
+                return '';
+            }}
+
+            // If has colon, parse hour:minute
+            const parts = value.split(':');
+            let hour = parseInt(parts[0]);
+            let minute = parseInt(parts[1]) || 0;
+
+            if (isNaN(hour) || hour < 0 || hour > 23) return '';
+            if (isNaN(minute) || minute < 0 || minute > 59) minute = 0;
+
+            return hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0');
+        }}
+
+        // Handle blur events to format time
+        startDisplay.addEventListener('blur', function() {{
+            const formatted = formatTimeInput(this);
+            if (formatted) {{
+                this.value = formatted;
+                startHidden.value = formatted;
+                calculateDuration();
+            }}
+        }});
+
+        endDisplay.addEventListener('blur', function() {{
+            const formatted = formatTimeInput(this);
+            if (formatted) {{
+                this.value = formatted;
+                endHidden.value = formatted;
+                calculateDuration();
+            }}
+        }});
+
+        // Handle Enter key for quick formatting
+        startDisplay.addEventListener('keydown', function(e) {{
+            if (e.key === 'Enter' || e.key === 'Tab') {{
+                const formatted = formatTimeInput(this);
+                if (formatted) {{
+                    this.value = formatted;
+                    startHidden.value = formatted;
+                    calculateDuration();
+                }}
+            }}
+        }});
+
+        endDisplay.addEventListener('keydown', function(e) {{
+            if (e.key === 'Enter' || e.key === 'Tab') {{
+                const formatted = formatTimeInput(this);
+                if (formatted) {{
+                    this.value = formatted;
+                    endHidden.value = formatted;
+                    calculateDuration();
+                }}
+            }}
+        }});
+
         function calculateDuration() {{
-            if (startInput.value && endInput.value) {{
-                const start = startInput.value.split(':');
-                const end = endInput.value.split(':');
+            if (startHidden.value && endHidden.value) {{
+                const start = startHidden.value.split(':');
+                const end = endHidden.value.split(':');
                 const startMins = parseInt(start[0]) * 60 + parseInt(start[1]);
                 const endMins = parseInt(end[0]) * 60 + parseInt(end[1]);
                 const duration = endMins - startMins;
@@ -1090,13 +1172,12 @@ async def log_form_partial(request: Request, week_id: int, db: Session = Depends
             }}
         }}
 
-        startInput.addEventListener('change', calculateDuration);
-        endInput.addEventListener('change', calculateDuration);
-
         minutesInput.addEventListener('input', function() {{
             if (this.value) {{
-                startInput.value = '';
-                endInput.value = '';
+                startDisplay.value = '';
+                endDisplay.value = '';
+                startHidden.value = '';
+                endHidden.value = '';
             }}
         }});
     </script>
