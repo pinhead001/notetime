@@ -21,11 +21,11 @@
             {% endif %}
             <div class="keyboard-hints">
                 <strong>Shortcuts:</strong>
-                <span class="hint"><kbd>n</kbd> New task</span>
-                <span class="hint"><kbd>t</kbd> Log time</span>
-                <span class="hint"><kbd>x</kbd> Complete</span>
-                <span class="hint"><kbd>d</kbd> Delegate</span>
-                <span class="hint"><kbd>f</kbd> Waiting</span>
+                <span class="hint"><kbd>Ctrl+N</kbd> New task</span>
+                <span class="hint"><kbd>Ctrl+T</kbd> Log time</span>
+                <span class="hint"><kbd>Ctrl+X</kbd> Complete</span>
+                <span class="hint"><kbd>Ctrl+D</kbd> Delegate</span>
+                <span class="hint"><kbd>Ctrl+F</kbd> Waiting</span>
                 <span class="hint"><kbd>Enter</kbd> Edit</span>
             </div>
         </header>
@@ -226,20 +226,34 @@
 
         // Global keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ignore if typing in input/textarea
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            // Check for Ctrl key combinations
+            if (!e.ctrlKey) {
+                // Allow Enter for inline editing when task is selected
+                if (e.key === 'Enter' && selectedTask &&
+                    e.target.tagName !== 'INPUT' &&
+                    e.target.tagName !== 'TEXTAREA' &&
+                    e.target.tagName !== 'SELECT') {
+                    e.preventDefault();
+                    const taskId = selectedTask.dataset.taskId;
+                    const titleSpan = selectedTask.querySelector('.task-title');
+                    enableInlineEdit(titleSpan, taskId);
+                }
                 return;
             }
 
             const key = e.key.toLowerCase();
 
-            // n = New task
+            // Ctrl+N = New task
             if (key === 'n') {
                 e.preventDefault();
                 document.querySelector('#add-task-container button')?.click();
+                // Auto-focus on task title field after form loads
+                setTimeout(() => {
+                    document.querySelector('[name="title"]')?.focus();
+                }, 100);
             }
 
-            // t = Log time
+            // Ctrl+T = Log time
             if (key === 't') {
                 e.preventDefault();
                 document.querySelector('#add-log-container button')?.click();
@@ -250,7 +264,7 @@
 
             const taskId = selectedTask.dataset.taskId;
 
-            // x = Complete task
+            // Ctrl+X = Complete task
             if (key === 'x') {
                 e.preventDefault();
                 htmx.ajax('PUT', `/api/tasks/${taskId}/complete`, {
@@ -261,7 +275,7 @@
                 });
             }
 
-            // f = Defer task
+            // Ctrl+F = Waiting task
             if (key === 'f') {
                 e.preventDefault();
                 htmx.ajax('PUT', `/api/tasks/${taskId}/defer`, {
@@ -272,7 +286,7 @@
                 });
             }
 
-            // d = Delegate task
+            // Ctrl+D = Delegate task
             if (key === 'd') {
                 e.preventDefault();
                 const delegateTo = prompt('Delegate to:');
@@ -283,13 +297,6 @@
                         body: JSON.stringify({ delegate: delegateTo, state: 'delegated' })
                     }).then(() => location.reload());
                 }
-            }
-
-            // Enter = Edit task title
-            if (key === 'enter') {
-                e.preventDefault();
-                const titleSpan = selectedTask.querySelector('.task-title');
-                enableInlineEdit(titleSpan, taskId);
             }
         });
 
