@@ -751,13 +751,9 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
                 type="text"
                 id="project-search"
                 placeholder="Type to search or create project..."
-                autocomplete="off"
-                list="project-options">
-            <datalist id="project-options">
-                <option value="">No project</option>
-                {"".join(f'<option value="{p.name}" data-id="{p.id}">' for p in projects)}
-            </datalist>
+                autocomplete="off">
             <input type="hidden" name="project_id" id="project-id-field" value="">
+            <div id="project-dropdown" class="project-dropdown hidden"></div>
         </div>
 
         <select name="priority">
@@ -788,6 +784,7 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
         const projects = {projects_json};
         const projectSearch = document.getElementById('project-search');
         const projectIdField = document.getElementById('project-id-field');
+        const dropdown = document.getElementById('project-dropdown');
         const dialog = document.getElementById('project-create-dialog');
         const newProjectNameSpan = document.getElementById('new-project-name');
         const editProjectNameInput = document.getElementById('edit-project-name');
@@ -796,50 +793,128 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
 
         let pendingProjectName = '';
         let editMode = false;
+        let filteredProjects = [];
+        let selectedIndex = -1;
 
-        // Update hidden field when selecting from datalist
+        // Show all projects on focus
+        projectSearch.addEventListener('focus', function() {{
+            showDropdown('');
+        }});
+
+        // Filter projects on input
         projectSearch.addEventListener('input', function() {{
             const value = this.value.trim();
+            showDropdown(value);
 
-            if (!value) {{
-                projectIdField.value = '';
-                return;
-            }}
-
-            // Check if it matches an existing project
+            // Update hidden field if exact match
             const match = projects.find(p => p.name.toLowerCase() === value.toLowerCase());
-            if (match) {{
-                projectIdField.value = match.id;
-            }} else {{
-                projectIdField.value = '';
-            }}
+            projectIdField.value = match ? match.id : '';
         }});
 
-        // Handle Enter key on project search
+        // Handle keyboard navigation
         projectSearch.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter') {{
+            if (e.key === 'ArrowDown') {{
                 e.preventDefault();
-                const value = this.value.trim();
-
-                if (!value) return;
-
-                // Check if it matches an existing project
-                const match = projects.find(p => p.name.toLowerCase() === value.toLowerCase());
-
-                if (!match) {{
-                    // Show create dialog
-                    pendingProjectName = value;
-                    newProjectNameSpan.textContent = value;
-                    dialog.classList.remove('dialog-hidden');
-                    editMode = false;
-                    editProjectNameInput.classList.add('edit-name-hidden');
-                    newProjectNameSpan.style.display = 'inline';
-                    confirmBtn.focus();
+                selectedIndex = Math.min(selectedIndex + 1, filteredProjects.length - 1);
+                highlightItem();
+            }} else if (e.key === 'ArrowUp') {{
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                highlightItem();
+            }} else if (e.key === 'Tab') {{
+                // Auto-complete to first match
+                if (filteredProjects.length > 0 && selectedIndex === -1) {{
+                    e.preventDefault();
+                    selectProject(filteredProjects[0]);
+                }} else if (selectedIndex >= 0) {{
+                    e.preventDefault();
+                    selectProject(filteredProjects[selectedIndex]);
                 }}
+            }} else if (e.key === 'Enter') {{
+                e.preventDefault();
+
+                if (selectedIndex >= 0) {{
+                    // Select highlighted item
+                    selectProject(filteredProjects[selectedIndex]);
+                }} else {{
+                    const value = this.value.trim();
+                    if (!value) return;
+
+                    // Check if exact match exists
+                    const match = projects.find(p => p.name.toLowerCase() === value.toLowerCase());
+
+                    if (!match) {{
+                        // Show create dialog
+                        hideDropdown();
+                        pendingProjectName = value;
+                        newProjectNameSpan.textContent = value;
+                        dialog.classList.remove('dialog-hidden');
+                        editMode = false;
+                        editProjectNameInput.classList.add('edit-name-hidden');
+                        newProjectNameSpan.style.display = 'inline';
+                        confirmBtn.focus();
+                    }}
+                }}
+            }} else if (e.key === 'Escape') {{
+                hideDropdown();
             }}
         }});
 
-        // Dialog keyboard navigation
+        // Hide dropdown when clicking outside
+        document.addEventListener('click', function(e) {{
+            if (!projectSearch.contains(e.target) && !dropdown.contains(e.target)) {{
+                hideDropdown();
+            }}
+        }});
+
+        function showDropdown(filter) {{
+            filter = filter.toLowerCase();
+
+            // Filter projects
+            filteredProjects = filter
+                ? projects.filter(p => p.name.toLowerCase().includes(filter))
+                : [...projects];
+
+            selectedIndex = -1;
+
+            if (filteredProjects.length === 0) {{
+                dropdown.innerHTML = '<div class="dropdown-item empty">No matching projects</div>';
+            }} else {{
+                dropdown.innerHTML = filteredProjects.map((p, i) =>
+                    `<div class="dropdown-item" data-index="${{i}}">${{p.name}}</div>`
+                ).join('');
+
+                // Add click handlers
+                dropdown.querySelectorAll('.dropdown-item').forEach(item => {{
+                    item.addEventListener('click', function() {{
+                        const index = parseInt(this.dataset.index);
+                        selectProject(filteredProjects[index]);
+                    }});
+                }});
+            }}
+
+            dropdown.classList.remove('hidden');
+        }}
+
+        function hideDropdown() {{
+            dropdown.classList.add('hidden');
+            selectedIndex = -1;
+        }}
+
+        function highlightItem() {{
+            dropdown.querySelectorAll('.dropdown-item').forEach((item, i) => {{
+                item.classList.toggle('highlighted', i === selectedIndex);
+            }});
+        }}
+
+        function selectProject(project) {{
+            projectSearch.value = project.name;
+            projectIdField.value = project.id;
+            hideDropdown();
+            document.querySelector('[name="priority"]').focus();
+        }}
+
+        // Dialog keyboard navigation (unchanged)
         dialog.addEventListener('keydown', function(e) {{
             if (e.key === 'Escape') {{
                 e.preventDefault();
@@ -849,7 +924,6 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
                 createProject();
             }} else if (e.key === 'Tab' && !editMode && e.target === confirmBtn) {{
                 e.preventDefault();
-                // Enter edit mode
                 editMode = true;
                 editProjectNameInput.value = pendingProjectName;
                 editProjectNameInput.classList.remove('edit-name-hidden');
@@ -859,7 +933,6 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
             }}
         }});
 
-        // Handle edit input
         editProjectNameInput.addEventListener('keydown', function(e) {{
             if (e.key === 'Enter') {{
                 e.preventDefault();
@@ -889,24 +962,10 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
 
                 if (response.ok) {{
                     const newProject = await response.json();
-
-                    // Add to projects list
                     projects.push(newProject);
-
-                    // Update form
                     projectSearch.value = newProject.name;
                     projectIdField.value = newProject.id;
-
-                    // Update datalist
-                    const datalist = document.getElementById('project-options');
-                    const option = document.createElement('option');
-                    option.value = newProject.name;
-                    option.setAttribute('data-id', newProject.id);
-                    datalist.appendChild(option);
-
                     closeDialog();
-
-                    // Focus back on form
                     document.querySelector('[name="priority"]').focus();
                 }}
             }} catch (error) {{
