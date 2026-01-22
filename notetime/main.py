@@ -13,8 +13,10 @@ API will be available at:
 from datetime import date, timedelta
 from typing import List, Optional
 from pathlib import Path
+from io import StringIO
+import csv
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -430,6 +432,122 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
         work_entries=[WorkEntryResponse.model_validate(e) for e in work_entries],
         projects=[ProjectResponse.model_validate(p) for p in projects],
         summary=summary
+    )
+
+
+@app.get("/api/weeks/{week_id}/export")
+def export_week_csv(week_id: int, db: Session = Depends(get_db)):
+    """
+    Export week data to CSV format.
+
+    Args:
+        week_id: ID of week to export
+
+    Returns:
+        CSV file with tasks, work entries, and summary
+
+    Raises:
+        404: If week not found
+    """
+    # Get week data
+    week = db.get(Week, week_id)
+    if not week:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+
+    # Get all data
+    tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
+
+    if tasks:
+        task_ids = [task.id for task in tasks]
+        work_entries = db.scalars(
+            select(WorkEntry).where(WorkEntry.task_id.in_(task_ids))
+        ).all()
+    else:
+        work_entries = []
+
+    # Get projects
+    project_ids = list(set(task.project_id for task in tasks if task.project_id is not None))
+    projects_map = {}
+    if project_ids:
+        projects = db.scalars(select(Project).where(Project.id.in_(project_ids))).all()
+        projects_map = {p.id: p.name for p in projects}
+
+    # Generate summary
+    summary = generate_weekly_summary(week_id, db)
+
+    # Create CSV in memory
+    output = StringIO()
+    writer = csv.writer(output)
+
+    # Week header
+    writer.writerow(["Notetime - Weekly Export"])
+    writer.writerow(["Week Starting:", week.start_date])
+    if week.note:
+        writer.writerow(["Note:", week.note])
+    writer.writerow([])
+
+    # Tasks section
+    writer.writerow(["TASKS"])
+    writer.writerow(["Title", "Project", "State", "Priority", "Delegate"])
+    for task in tasks:
+        project_name = projects_map.get(task.project_id, "")
+        writer.writerow([
+            task.title,
+            project_name,
+            task.state,
+            task.priority,
+            task.delegate or ""
+        ])
+    writer.writerow([])
+
+    # Work entries section
+    writer.writerow(["WORK ENTRIES"])
+    writer.writerow(["Task", "Date", "Start Time", "End Time", "Minutes", "Hours", "Note"])
+    for entry in work_entries:
+        task = next((t for t in tasks if t.id == entry.task_id), None)
+        task_title = task.title if task else f"Task {entry.task_id}"
+        start_time_str = entry.start_time.strftime("%H:%M") if entry.start_time else ""
+        end_time_str = entry.end_time.strftime("%H:%M") if entry.end_time else ""
+        writer.writerow([
+            task_title,
+            entry.date,
+            start_time_str,
+            end_time_str,
+            entry.minutes,
+            round(entry.minutes / 60, 2),
+            entry.note or ""
+        ])
+    writer.writerow([])
+
+    # Summary section
+    writer.writerow(["WEEKLY SUMMARY"])
+    writer.writerow(["Project", "Task", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Total"])
+    for project_name, tasks_data in summary.items():
+        for task_name, days in tasks_data.items():
+            writer.writerow([
+                project_name,
+                task_name,
+                days.get('Mon', '-'),
+                days.get('Tue', '-'),
+                days.get('Wed', '-'),
+                days.get('Thu', '-'),
+                days.get('Fri', '-'),
+                days.get('Sat', '-'),
+                days.get('Sun', '-'),
+                days.get('Total', 0)
+            ])
+
+    # Prepare response
+    output.seek(0)
+    filename = f"notetime_week_{week.start_date}.csv"
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 
