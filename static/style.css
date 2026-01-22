@@ -691,3 +691,147 @@ kbd {
 .dialog-actions button:not(.btn-primary):hover {
     background-color: #bdc3c7;
 }
+
+/* ========================================
+   Projects Management Page
+   ======================================== */
+
+.header-actions {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    margin-top: 15px;
+}
+
+.btn-secondary {
+    padding: 10px 20px;
+    background-color: #95a5a6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    text-decoration: none;
+    cursor: pointer;
+    font-size: 1em;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background-color: #7f8c8d;
+}
+
+.filter-tabs {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.filter-tab {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 1em;
+    color: #7f8c8d;
+    transition: all 0.2s;
+}
+
+.filter-tab:hover {
+    color: #2c3e50;
+}
+
+.filter-tab.active {
+    color: #3498db;
+    border-bottom-color: #3498db;
+    font-weight: 600;
+}
+
+.projects-section {
+    margin-top: 30px;
+}
+
+.projects-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.project-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-left: 4px solid #3498db;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.project-item:hover {
+    background-color: #ecf0f1;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.project-item.project-archived {
+    border-left-color: #95a5a6;
+    opacity: 0.7;
+}
+
+.project-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.project-name {
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.project-status-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.badge-active {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.badge-archived {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.project-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-toggle {
+    padding: 8px 16px;
+    background-color: #ecf0f1;
+    color: #2c3e50;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s;
+}
+
+.btn-toggle:hover {
+    background-color: #bdc3c7;
+}
+
+#new-project-name-input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    font-size: 1em;
+}

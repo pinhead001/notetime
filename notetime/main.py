@@ -676,6 +676,35 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     return project
 
 
+@app.put("/api/projects/{project_id}", response_model=ProjectResponse)
+def update_project(project_id: int, is_active: bool, db: Session = Depends(get_db)):
+    """
+    Update a project's status.
+
+    Args:
+        project_id: ID of project to update
+        is_active: New active status
+
+    Returns:
+        Updated project
+
+    Raises:
+        404: If project not found
+    """
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+
+    project.is_active = is_active
+    db.commit()
+    db.refresh(project)
+
+    return project
+
+
 # ============================================
 # Web UI Routes (HTMX)
 # ============================================
@@ -727,6 +756,18 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary
+    })
+
+
+@app.get("/projects/manage", response_class=HTMLResponse)
+async def projects_management(request: Request, db: Session = Depends(get_db)):
+    """Serve projects management page"""
+    # Get all projects (both active and inactive)
+    all_projects = db.scalars(select(Project).order_by(Project.is_active.desc(), Project.name)).all()
+
+    return templates.TemplateResponse("projects.html", {
+        "request": request,
+        "projects": all_projects
     })
 
 
