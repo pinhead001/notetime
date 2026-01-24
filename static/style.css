@@ -215,6 +215,12 @@ h2 {
     border-color: #3498db;
 }
 
+.btn-delete:hover {
+    background-color: #e74c3c;
+    color: white;
+    border-color: #e74c3c;
+}
+
 /* Daily Log */
 .log-entries {
     display: flex;
@@ -223,38 +229,69 @@ h2 {
 }
 
 .log-entry {
-    padding: 12px;
+    padding: 10px 12px;
     background-color: #f8f9fa;
     border-left: 3px solid #9b59b6;
     border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
-.log-header {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    font-weight: 500;
+.log-field {
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.log-field:hover {
+    background-color: #e3f2fd;
 }
 
 .log-date {
     color: #7f8c8d;
+    font-weight: 500;
+    min-width: 85px;
+}
+
+.log-time {
+    color: #34495e;
+    font-weight: 500;
+    min-width: 45px;
 }
 
 .log-duration {
     color: #9b59b6;
     font-weight: 600;
+    min-width: 50px;
 }
 
-.log-details strong {
-    color: #2c3e50;
+.log-separator {
+    color: #bdc3c7;
+    margin: 0 4px;
 }
 
 .log-note {
-    margin-top: 8px;
     color: #555;
     font-family: 'Kalam', cursive;
     font-size: 1em;
-    line-height: 1.5;
+    flex: 1;
+    min-width: 200px;
+}
+
+.log-note-empty {
+    color: #bdc3c7;
+    font-style: italic;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.log-note-empty:hover {
+    background-color: #e3f2fd;
 }
 
 /* Summary Table */

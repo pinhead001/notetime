@@ -65,6 +65,12 @@
                                 hx-swap="outerHTML"
                                 class="btn-icon"
                                 title="Mark as Waiting">⏸</button>
+                        <button hx-delete="/api/tasks/{{ task.id }}"
+                                hx-target="#task-{{ task.id }}"
+                                hx-swap="outerHTML swap:1s"
+                                hx-confirm="Delete this task?"
+                                class="btn-icon btn-delete"
+                                title="Delete">🗑</button>
                     </div>
 
                     <div class="task-content">
@@ -107,21 +113,20 @@
             {% if work_entries %}
             <div class="log-entries">
                 {% for entry in work_entries %}
-                <div class="log-entry">
-                    <div class="log-header">
-                        <span class="log-date">{{ entry.date }}</span>
-                        <span class="log-duration">{{ (entry.minutes / 60)|round(2) }}h</span>
-                    </div>
-                    <div class="log-details">
-                        {% for task in tasks %}
-                            {% if task.id == entry.task_id %}
-                            <strong>{{ task.title }}</strong>
-                            {% endif %}
-                        {% endfor %}
-                        {% if entry.note %}
-                        <p class="log-note">{{ entry.note }}</p>
-                        {% endif %}
-                    </div>
+                <div class="log-entry" data-entry-id="{{ entry.id }}">
+                    <span class="log-field log-date" data-field="date" data-editable="true" title="Click to edit date">{{ entry.date }}</span>
+                    <span class="log-separator">|</span>
+                    <span class="log-field log-time" data-field="start_time" data-editable="true" title="Click to edit start time">{{ entry.start_time if entry.start_time else '--:--' }}</span>
+                    <span>-</span>
+                    <span class="log-field log-time" data-field="end_time" data-editable="true" title="Click to edit end time">{{ entry.end_time if entry.end_time else '--:--' }}</span>
+                    <span class="log-separator">|</span>
+                    <span class="log-duration">{{ (entry.minutes / 60)|round(2) }}h</span>
+                    <span class="log-separator">|</span>
+                    {% if entry.note %}
+                    <span class="log-field log-note" data-field="note" data-editable="true" title="Click to edit note">{{ entry.note }}</span>
+                    {% else %}
+                    <span class="log-field log-note-empty" data-field="note" data-editable="true" title="Click to add note">(no note)</span>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
@@ -391,6 +396,77 @@
                 const taskItem = this.closest('.task-item');
                 const taskId = taskItem.dataset.taskId;
                 enableInlineEdit(this, taskId);
+            });
+        });
+
+        // ========================================
+        // Day 10: Work Entry Inline Editing
+        // ========================================
+
+        // Inline editing for work entry fields
+        function enableWorkEntryEdit(element, entryId, fieldName) {
+            const currentText = element.textContent.trim();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentText === '(no note)' || currentText === '--:--' ? '' : currentText;
+            input.className = 'inline-edit';
+
+            // Set input type based on field
+            if (fieldName === 'date') {
+                input.type = 'date';
+            }
+
+            // Save on Enter or blur
+            const save = () => {
+                const newValue = input.value.trim();
+
+                // Build the update payload
+                const payload = {};
+                payload[fieldName] = newValue || null;
+
+                fetch(`/api/work_entries/${entryId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(response => {
+                    if (response.ok) {
+                        // Reload page to show updated times and recalculated hours
+                        location.reload();
+                    } else {
+                        alert('Error updating work entry');
+                        element.textContent = currentText;
+                    }
+                }).catch(err => {
+                    alert('Error updating work entry');
+                    element.textContent = currentText;
+                });
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    save();
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    element.textContent = currentText;
+                }
+            });
+
+            element.textContent = '';
+            element.appendChild(input);
+            input.focus();
+            input.select();
+        }
+
+        // Click to edit work entry fields
+        document.querySelectorAll('.log-field[data-editable="true"]').forEach(field => {
+            field.addEventListener('click', function() {
+                const entryDiv = this.closest('.log-entry');
+                const entryId = entryDiv.dataset.entryId;
+                const fieldName = this.dataset.field;
+                enableWorkEntryEdit(this, entryId, fieldName);
             });
         });
     </script>

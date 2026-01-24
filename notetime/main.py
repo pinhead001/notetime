@@ -26,7 +26,7 @@ from notetime.db import SessionLocal, engine
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
 from notetime.schemas import (
     TaskCreate, TaskUpdate, TaskResponse,
-    WorkEntryCreate, WorkEntryResponse,
+    WorkEntryCreate, WorkEntryUpdate, WorkEntryResponse,
     WeekResponse, WeeklyView,
     ProjectResponse
 )
@@ -200,6 +200,28 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     return db_task
 
 
+@app.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a task.
+
+    Args:
+        task_id: ID of task to delete
+
+    Raises:
+        404: If task not found
+    """
+    db_task = db.get(Task, task_id)
+    if not db_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {task_id} not found"
+        )
+
+    db.delete(db_task)
+    db.commit()
+
+
 # ============================================
 # Work Entry Endpoints
 # ============================================
@@ -304,6 +326,79 @@ def get_work_entry(entry_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
         )
+
+    return db_entry
+
+
+@app.put("/api/work_entries/{entry_id}", response_model=WorkEntryResponse)
+async def update_work_entry(
+    entry_id: int,
+    entry_update: WorkEntryUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update a work entry.
+
+    Args:
+        entry_id: ID of work entry to update
+        entry_update: Fields to update (JSON body)
+
+    Returns:
+        Updated work entry
+
+    Raises:
+        404: If work entry not found
+    """
+    from datetime import datetime
+    from notetime.time_engine import duration_minutes as calc_duration
+
+    db_entry = db.get(WorkEntry, entry_id)
+    if not db_entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work entry with id {entry_id} not found"
+        )
+
+    # Update fields if provided
+    if entry_update.date is not None:
+        db_entry.date = entry_update.date
+
+    # Handle time updates
+    start_time_obj = db_entry.start_time
+    end_time_obj = db_entry.end_time
+
+    if entry_update.start_time is not None:
+        try:
+            start_time_obj = datetime.strptime(entry_update.start_time, "%H:%M").time()
+            db_entry.start_time = start_time_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid start time format. Use HH:MM"
+            )
+
+    if entry_update.end_time is not None:
+        try:
+            end_time_obj = datetime.strptime(entry_update.end_time, "%H:%M").time()
+            db_entry.end_time = end_time_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid end time format. Use HH:MM"
+            )
+
+    # Recalculate minutes if both times are present
+    if start_time_obj and end_time_obj:
+        calculated_minutes = calc_duration(start_time_obj, end_time_obj)
+        db_entry.minutes = calculated_minutes
+    elif entry_update.minutes is not None:
+        db_entry.minutes = entry_update.minutes
+
+    if entry_update.note is not None:
+        db_entry.note = entry_update.note
+
+    db.commit()
+    db.refresh(db_entry)
 
     return db_entry
 
