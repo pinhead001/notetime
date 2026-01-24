@@ -39,6 +39,15 @@ class WorkEntryCreate(BaseModel):
             raise ValueError("Minutes must be positive")
         return v
 
+
+class WorkEntryUpdate(BaseModel):
+    """WorkEntry update schema - all fields optional"""
+    date: Optional[date] = None
+    start_time: Optional[str] = None  # Accept as string for easier parsing
+    end_time: Optional[str] = None    # Accept as string for easier parsing
+    minutes: Optional[int] = None
+    note: Optional[str] = None
+
 # ------------------------------
 # Task summary output
 # ------------------------------

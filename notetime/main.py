@@ -26,7 +26,7 @@ from notetime.db import SessionLocal, engine
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
 from notetime.schemas import (
     TaskCreate, TaskUpdate, TaskResponse,
-    WorkEntryCreate, WorkEntryResponse,
+    WorkEntryCreate, WorkEntryUpdate, WorkEntryResponse,
     WeekResponse, WeeklyView,
     ProjectResponse
 )
@@ -333,11 +333,7 @@ def get_work_entry(entry_id: int, db: Session = Depends(get_db)):
 @app.put("/api/work_entries/{entry_id}", response_model=WorkEntryResponse)
 async def update_work_entry(
     entry_id: int,
-    date: Optional[date] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
-    minutes: Optional[int] = None,
-    note: Optional[str] = None,
+    entry_update: WorkEntryUpdate,
     db: Session = Depends(get_db)
 ):
     """
@@ -345,11 +341,7 @@ async def update_work_entry(
 
     Args:
         entry_id: ID of work entry to update
-        date: New date (optional)
-        start_time: New start time (optional)
-        end_time: New end time (optional)
-        minutes: New minutes (optional)
-        note: New note (optional)
+        entry_update: Fields to update (JSON body)
 
     Returns:
         Updated work entry
@@ -368,16 +360,16 @@ async def update_work_entry(
         )
 
     # Update fields if provided
-    if date is not None:
-        db_entry.date = date
+    if entry_update.date is not None:
+        db_entry.date = entry_update.date
 
     # Handle time updates
     start_time_obj = db_entry.start_time
     end_time_obj = db_entry.end_time
 
-    if start_time:
+    if entry_update.start_time is not None:
         try:
-            start_time_obj = datetime.strptime(start_time, "%H:%M").time()
+            start_time_obj = datetime.strptime(entry_update.start_time, "%H:%M").time()
             db_entry.start_time = start_time_obj
         except ValueError:
             raise HTTPException(
@@ -385,9 +377,9 @@ async def update_work_entry(
                 detail="Invalid start time format. Use HH:MM"
             )
 
-    if end_time:
+    if entry_update.end_time is not None:
         try:
-            end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+            end_time_obj = datetime.strptime(entry_update.end_time, "%H:%M").time()
             db_entry.end_time = end_time_obj
         except ValueError:
             raise HTTPException(
@@ -399,11 +391,11 @@ async def update_work_entry(
     if start_time_obj and end_time_obj:
         calculated_minutes = calc_duration(start_time_obj, end_time_obj)
         db_entry.minutes = calculated_minutes
-    elif minutes is not None:
-        db_entry.minutes = minutes
+    elif entry_update.minutes is not None:
+        db_entry.minutes = entry_update.minutes
 
-    if note is not None:
-        db_entry.note = note
+    if entry_update.note is not None:
+        db_entry.note = entry_update.note
 
     db.commit()
     db.refresh(db_entry)
