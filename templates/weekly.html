@@ -39,6 +39,9 @@
                 <button class="shortcut-btn" onclick="triggerWaiting()" title="Press 'f' to mark selected task as Waiting">
                     <kbd>f</kbd> Waiting
                 </button>
+                <button class="shortcut-btn" onclick="window.location.href='/api/weeks/{{ week.id }}/export'" title="Export this week's data to CSV">
+                    <kbd>📊</kbd> Export CSV
+                </button>
             </div>
         </header>
 
@@ -67,9 +70,10 @@
                                 title="Mark as Waiting">⏸</button>
                         <button hx-delete="/api/tasks/{{ task.id }}"
                                 hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML swap:1s"
+                                hx-swap="delete"
                                 hx-confirm="Delete this task?"
                                 class="btn-icon btn-delete"
+                                onclick="setTimeout(() => location.reload(), 500)"
                                 title="Delete">🗑</button>
                     </div>
 
@@ -191,8 +195,6 @@
         <footer>
             <p>Notetime MVP - Faster than paper</p>
             <p class="footer-links">
-                <a href="/projects/manage">Manage Projects</a> |
-                <a href="/api/weeks/{{ week.id }}/export">Export CSV</a> |
                 <a href="/docs">API Docs</a>
             </p>
         </footer>
