@@ -200,6 +200,28 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     return db_task
 
 
+@app.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a task.
+
+    Args:
+        task_id: ID of task to delete
+
+    Raises:
+        404: If task not found
+    """
+    db_task = db.get(Task, task_id)
+    if not db_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {task_id} not found"
+        )
+
+    db.delete(db_task)
+    db.commit()
+
+
 # ============================================
 # Work Entry Endpoints
 # ============================================
@@ -304,6 +326,87 @@ def get_work_entry(entry_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
         )
+
+    return db_entry
+
+
+@app.put("/api/work_entries/{entry_id}", response_model=WorkEntryResponse)
+async def update_work_entry(
+    entry_id: int,
+    date: Optional[date] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    minutes: Optional[int] = None,
+    note: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Update a work entry.
+
+    Args:
+        entry_id: ID of work entry to update
+        date: New date (optional)
+        start_time: New start time (optional)
+        end_time: New end time (optional)
+        minutes: New minutes (optional)
+        note: New note (optional)
+
+    Returns:
+        Updated work entry
+
+    Raises:
+        404: If work entry not found
+    """
+    from datetime import datetime
+    from notetime.time_engine import duration_minutes as calc_duration
+
+    db_entry = db.get(WorkEntry, entry_id)
+    if not db_entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work entry with id {entry_id} not found"
+        )
+
+    # Update fields if provided
+    if date is not None:
+        db_entry.date = date
+
+    # Handle time updates
+    start_time_obj = db_entry.start_time
+    end_time_obj = db_entry.end_time
+
+    if start_time:
+        try:
+            start_time_obj = datetime.strptime(start_time, "%H:%M").time()
+            db_entry.start_time = start_time_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid start time format. Use HH:MM"
+            )
+
+    if end_time:
+        try:
+            end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+            db_entry.end_time = end_time_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid end time format. Use HH:MM"
+            )
+
+    # Recalculate minutes if both times are present
+    if start_time_obj and end_time_obj:
+        calculated_minutes = calc_duration(start_time_obj, end_time_obj)
+        db_entry.minutes = calculated_minutes
+    elif minutes is not None:
+        db_entry.minutes = minutes
+
+    if note is not None:
+        db_entry.note = note
+
+    db.commit()
+    db.refresh(db_entry)
 
     return db_entry
 
