@@ -105,7 +105,7 @@
                                 <span class="task-meta-inline">
                                     <span class="priority-badge">P{{ item.data.priority }}</span>
                                     {% if item.data.delegate %}
-                                    <span class="delegate-badge">→ {{ item.data.delegate }}</span>
+                                    <span class="delegate-badge">{{ item.data.delegate }}</span>
                                     {% endif %}
                                 </span>
                             </div>
@@ -171,7 +171,7 @@
                     <div class="task-content">
                         <span class="task-title" data-editable="true">{{ task.title }}</span>
                         {% if task.delegate %}
-                        <span class="task-delegate">→ {{ task.delegate }}</span>
+                        <span class="task-delegate">{{ task.delegate }}</span>
                         {% endif %}
                         <span class="task-meta">
                             {% if task.project_id and projects %}
