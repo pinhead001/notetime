@@ -9,7 +9,7 @@ class TaskCreate(BaseModel):
     title: str
     week_id: int
     state: str = "active"
-    priority: int = 3
+    priority: int = 0
     project_id: Optional[int] = None
     delegate: Optional[str] = None
     parent_task_id: Optional[int] = None
