@@ -1026,6 +1026,15 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     # Get weekly data
     weekly_data = get_week(week.id, db)
 
+    # Get all projects (for PM section)
+    all_projects = db.scalars(select(Project).where(Project.is_active == True).order_by(Project.name)).all()
+
+    # Get all tasks for PM section (organized by project, sorted by sort_order)
+    all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
+
+    # Filter weekly tasks to only P1 tasks
+    p1_tasks = [t for t in weekly_data.tasks if t.priority == 1]
+
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
 
@@ -1056,11 +1065,13 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": weekly_data.tasks,
+        "tasks": p1_tasks,  # Only P1 tasks for weekly section
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
-        "timeline": timeline
+        "timeline": timeline,
+        "all_projects": all_projects,  # All projects for PM section
+        "all_tasks": all_tasks  # All tasks for PM section
     })
 
 
@@ -1068,6 +1079,15 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
 async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depends(get_db)):
     """Serve weekly page for a specific week"""
     weekly_data = get_week(week_id, db)
+
+    # Get all projects (for PM section)
+    all_projects = db.scalars(select(Project).where(Project.is_active == True).order_by(Project.name)).all()
+
+    # Get all tasks for PM section (organized by project, sorted by sort_order)
+    all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
+
+    # Filter weekly tasks to only P1 tasks
+    p1_tasks = [t for t in weekly_data.tasks if t.priority == 1]
 
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
@@ -1100,11 +1120,13 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": weekly_data.tasks,
+        "tasks": p1_tasks,  # Only P1 tasks for weekly section
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
-        "timeline": timeline
+        "timeline": timeline,
+        "all_projects": all_projects,  # All projects for PM section
+        "all_tasks": all_tasks  # All tasks for PM section
     })
 
 
@@ -1579,6 +1601,76 @@ async def defer_task(task_id: int, db: Session = Depends(get_db)):
 
     # Return updated task HTML
     return HTMLResponse(content=f'<div class="task-item task-waiting">⏸ {task.title} (Waiting)</div>')
+
+
+# ============================================
+# Day 12: Task Movement & Ordering
+# ============================================
+
+@app.post("/api/tasks/{task_id}/move-up")
+async def move_task_up(task_id: int, db: Session = Depends(get_db)):
+    """Move task up in sort order"""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Get sibling tasks (same project, same parent)
+    siblings_query = select(Task).where(
+        Task.project_id == task.project_id,
+        Task.parent_task_id == task.parent_task_id
+    ).order_by(Task.sort_order, Task.id)
+
+    siblings = list(db.scalars(siblings_query).all())
+
+    # Find current position
+    try:
+        current_idx = siblings.index(task)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Task not found in siblings")
+
+    # Can't move up if already first
+    if current_idx == 0:
+        return {"status": "already_first"}
+
+    # Swap sort_order with previous sibling
+    prev_task = siblings[current_idx - 1]
+    task.sort_order, prev_task.sort_order = prev_task.sort_order, task.sort_order
+
+    db.commit()
+    return {"status": "success"}
+
+
+@app.post("/api/tasks/{task_id}/move-down")
+async def move_task_down(task_id: int, db: Session = Depends(get_db)):
+    """Move task down in sort order"""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Get sibling tasks (same project, same parent)
+    siblings_query = select(Task).where(
+        Task.project_id == task.project_id,
+        Task.parent_task_id == task.parent_task_id
+    ).order_by(Task.sort_order, Task.id)
+
+    siblings = list(db.scalars(siblings_query).all())
+
+    # Find current position
+    try:
+        current_idx = siblings.index(task)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Task not found in siblings")
+
+    # Can't move down if already last
+    if current_idx >= len(siblings) - 1:
+        return {"status": "already_last"}
+
+    # Swap sort_order with next sibling
+    next_task = siblings[current_idx + 1]
+    task.sort_order, next_task.sort_order = next_task.sort_order, task.sort_order
+
+    db.commit()
+    return {"status": "success"}
 
 
 # ============================================
