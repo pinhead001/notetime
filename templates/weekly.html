@@ -97,8 +97,8 @@
                                             title="Complete">✓</button>
                                     <button hx-delete="/api/tasks/{{ item.data.id }}"
                                             hx-confirm="Delete?"
-                                            onclick="setTimeout(() => location.reload(), 500)"
                                             class="btn-icon-sm btn-delete"
+                                            data-action="delete-task"
                                             title="Delete">×</button>
                                 </div>
                                 <span class="task-title-inline" data-editable="true">{{ item.data.title }}</span>
@@ -122,7 +122,7 @@
                                     -
                                     <span class="log-field" data-field="end_time" data-editable="true">{{ item.data.end_time if item.data.end_time else '--:--' }}</span>
                                 </span>
-                                <span class="log-duration-inline">{{ (item.data.minutes / 60)|round(2) }}h</span>
+                                <span class="log-duration-inline log-field" data-field="minutes" data-editable="true" title="Click to edit duration">{{ (item.data.minutes / 60)|round(2) }}h</span>
                                 {% if item.data.note %}
                                 <span class="log-note-inline" data-field="note" data-editable="true">{{ item.data.note }}</span>
                                 {% else %}
@@ -162,11 +162,9 @@
                                 class="btn-icon"
                                 title="Mark as Waiting">⏸</button>
                         <button hx-delete="/api/tasks/{{ task.id }}"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="delete"
                                 hx-confirm="Delete this task?"
                                 class="btn-icon btn-delete"
-                                onclick="setTimeout(() => location.reload(), 500)"
+                                data-action="delete-task"
                                 title="Delete">🗑</button>
                     </div>
 
@@ -217,7 +215,7 @@
                     <span>-</span>
                     <span class="log-field log-time" data-field="end_time" data-editable="true" title="Click to edit end time">{{ entry.end_time if entry.end_time else '--:--' }}</span>
                     <span class="log-separator">|</span>
-                    <span class="log-duration">{{ (entry.minutes / 60)|round(2) }}h</span>
+                    <span class="log-duration log-field" data-field="minutes" data-editable="true" title="Click to edit duration">{{ (entry.minutes / 60)|round(2) }}h</span>
                     <span class="log-separator">|</span>
                     {% if entry.note %}
                     <span class="log-field log-note" data-field="note" data-editable="true" title="Click to edit note">{{ entry.note }}</span>
@@ -304,6 +302,16 @@
                 const wasSuccess = event.detail.xhr.status === 200 || event.detail.xhr.status === 201;
 
                 if (wasPost && wasSuccess) {
+                    location.reload();
+                }
+            }
+        });
+
+        // Reload page after successful task deletion
+        document.body.addEventListener('htmx:afterRequest', function(event) {
+            const target = event.detail.target;
+            if (target && target.dataset.action === 'delete-task') {
+                if (event.detail.successful) {
                     location.reload();
                 }
             }
@@ -554,6 +562,63 @@
         // Inline editing for work entry fields
         function enableWorkEntryEdit(element, entryId, fieldName) {
             const currentText = element.textContent.trim();
+
+            // Special handling for minutes/duration
+            if (fieldName === 'minutes') {
+                const currentHours = parseFloat(currentText.replace('h', ''));
+                const currentMinutes = Math.round(currentHours * 60);
+
+                const newHours = prompt(`Enter duration in hours (current: ${currentHours}h):`);
+                if (newHours === null) return; // Cancelled
+
+                const newMinutes = Math.round(parseFloat(newHours) * 60);
+                if (isNaN(newMinutes) || newMinutes <= 0) {
+                    alert('Invalid duration');
+                    return;
+                }
+
+                // Check if start/end times exist
+                const entryDiv = element.closest('[data-entry-id]');
+                const startTimeEl = entryDiv.querySelector('[data-field="start_time"]');
+                const endTimeEl = entryDiv.querySelector('[data-field="end_time"]');
+                const hasStartTime = startTimeEl && startTimeEl.textContent.trim() !== '--:--';
+                const hasEndTime = endTimeEl && endTimeEl.textContent.trim() !== '--:--';
+
+                let payload = { minutes: newMinutes };
+
+                if (hasStartTime && hasEndTime) {
+                    const choice = confirm(
+                        'Start and end times are already set.\n\n' +
+                        'Click OK to keep start time and adjust end time.\n' +
+                        'Click Cancel to clear times and use duration only.'
+                    );
+
+                    if (!choice) {
+                        // Clear start/end times
+                        payload.start_time = null;
+                        payload.end_time = null;
+                    }
+                    // If OK (true), we just send minutes and backend will recalculate
+                }
+
+                fetch(`/api/work_entries/${entryId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(response => {
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error updating work entry');
+                    }
+                }).catch(err => {
+                    alert('Error updating work entry');
+                });
+
+                return;
+            }
+
+            // Regular inline edit for other fields
             const input = document.createElement('input');
             input.type = 'text';
             input.value = currentText === '(no note)' || currentText === '--:--' ? '' : currentText;
