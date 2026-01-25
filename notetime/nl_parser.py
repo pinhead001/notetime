@@ -84,8 +84,8 @@ def _parse_time_entry(text: str, week_id: int, default_task_id: Optional[int] = 
 
             return {
                 "date": entry_date,
-                "start_time": start_time.strftime("%H:%M"),
-                "end_time": end_time.strftime("%H:%M"),
+                "start_time": start_time,  # Return as time object, not string
+                "end_time": end_time,      # Return as time object, not string
                 "minutes": minutes,
                 "note": description.strip(),
                 "task_id": default_task_id
