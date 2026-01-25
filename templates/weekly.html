@@ -45,6 +45,99 @@
             </div>
         </header>
 
+        <!-- Notebook Quick-Add -->
+        <section class="notebook-quick-add">
+            <div class="quick-add-container">
+                <div class="quick-add-icon">✍️</div>
+                <input
+                    type="text"
+                    id="quick-add-input"
+                    class="quick-add-input"
+                    placeholder="Type to add: '9-11 worked on API' or 'P1 deploy feature' or '2h fixed bug'..."
+                    autocomplete="off"
+                    autofocus>
+                <div class="quick-add-hints">
+                    <span class="hint-item">9-11 task</span>
+                    <span class="hint-item">2h task</span>
+                    <span class="hint-item">P1 task</span>
+                    <span class="hint-item">@Project task</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Chronological Timeline (Notebook View) -->
+        <section class="timeline-section">
+            <h2>📖 This Week</h2>
+
+            {% if timeline %}
+            <div class="timeline">
+                {% set current_date = namespace(value=None) %}
+                {% for item in timeline %}
+                    <!-- Date separator -->
+                    {% if item.date != current_date.value %}
+                        {% set current_date.value = item.date %}
+                        <div class="timeline-date-header">
+                            <span class="timeline-date">{{ item.date.strftime('%A, %B %d') }}</span>
+                        </div>
+                    {% endif %}
+
+                    <!-- Timeline item -->
+                    {% if item.type == 'task' %}
+                        <!-- Task item -->
+                        <div class="timeline-item timeline-task task-{{ item.data.state }}"
+                             id="task-{{ item.data.id }}"
+                             data-task-id="{{ item.data.id }}">
+                            <div class="timeline-marker">{% if item.data.state == 'completed' %}✓{% else %}○{% endif %}</div>
+                            <div class="timeline-content">
+                                <div class="task-actions-inline">
+                                    <button hx-put="/api/tasks/{{ item.data.id }}/complete"
+                                            hx-target="#task-{{ item.data.id }}"
+                                            hx-swap="outerHTML"
+                                            class="btn-icon-sm"
+                                            title="Complete">✓</button>
+                                    <button hx-delete="/api/tasks/{{ item.data.id }}"
+                                            hx-confirm="Delete?"
+                                            onclick="setTimeout(() => location.reload(), 500)"
+                                            class="btn-icon-sm btn-delete"
+                                            title="Delete">×</button>
+                                </div>
+                                <span class="task-title-inline" data-editable="true">{{ item.data.title }}</span>
+                                <span class="task-meta-inline">
+                                    <span class="priority-badge">P{{ item.data.priority }}</span>
+                                    {% if item.data.delegate %}
+                                    <span class="delegate-badge">→ {{ item.data.delegate }}</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    {% else %}
+                        <!-- Work entry item -->
+                        <div class="timeline-item timeline-log" data-entry-id="{{ item.data.id }}">
+                            <div class="timeline-marker timeline-marker-time">
+                                {% if item.data.start_time %}{{ item.data.start_time.strftime('%H:%M') }}{% else %}--:--{% endif %}
+                            </div>
+                            <div class="timeline-content">
+                                <span class="log-time-range">
+                                    <span class="log-field" data-field="start_time" data-editable="true">{{ item.data.start_time if item.data.start_time else '--:--' }}</span>
+                                    -
+                                    <span class="log-field" data-field="end_time" data-editable="true">{{ item.data.end_time if item.data.end_time else '--:--' }}</span>
+                                </span>
+                                <span class="log-duration-inline">{{ (item.data.minutes / 60)|round(2) }}h</span>
+                                {% if item.data.note %}
+                                <span class="log-note-inline" data-field="note" data-editable="true">{{ item.data.note }}</span>
+                                {% else %}
+                                <span class="log-note-inline log-note-empty" data-field="note" data-editable="true">(no note)</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-state">Nothing logged yet. Start by typing above!</p>
+            {% endif %}
+        </section>
+
         <!-- Weekly Priorities Section -->
         <section class="priorities">
             <h2>📋 Weekly Priorities</h2>
@@ -215,6 +308,59 @@
                 }
             }
         });
+
+        // ========================================
+        // Day 11: Notebook Quick-Add
+        // ========================================
+
+        const quickAddInput = document.getElementById('quick-add-input');
+        const weekId = {{ week.id }};
+
+        if (quickAddInput) {
+            // Submit on Enter
+            quickAddInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && this.value.trim()) {
+                    e.preventDefault();
+                    submitQuickAdd(this.value.trim());
+                }
+            });
+
+            // Focus on load
+            quickAddInput.focus();
+        }
+
+        async function submitQuickAdd(text) {
+            const formData = new FormData();
+            formData.append('text', text);
+            formData.append('week_id', weekId);
+
+            try {
+                const response = await fetch('/api/quick-add', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    // Clear input
+                    quickAddInput.value = '';
+                    // Show success feedback
+                    quickAddInput.placeholder = result.type === 'task' ? '✓ Task added!' : '✓ Time logged!';
+                    setTimeout(() => {
+                        quickAddInput.placeholder = "Type to add: '9-11 worked on API' or 'P1 deploy feature' or '2h fixed bug'...";
+                    }, 2000);
+                    // Reload to show new entry
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Could not parse entry');
+                    quickAddInput.select();
+                }
+            } catch (err) {
+                alert('Error adding entry');
+                console.error(err);
+            }
+        }
 
         // ========================================
         // Day 8: Keyboard Shortcuts & Inline Editing
@@ -467,6 +613,29 @@
             field.addEventListener('click', function() {
                 const entryDiv = this.closest('.log-entry');
                 const entryId = entryDiv.dataset.entryId;
+                const fieldName = this.dataset.field;
+                enableWorkEntryEdit(this, entryId, fieldName);
+            });
+        });
+
+        // ========================================
+        // Timeline Inline Editing
+        // ========================================
+
+        // Double-click to edit task titles in timeline
+        document.querySelectorAll('.task-title-inline[data-editable="true"]').forEach(title => {
+            title.addEventListener('dblclick', function() {
+                const taskItem = this.closest('.timeline-task');
+                const taskId = taskItem.dataset.taskId;
+                enableInlineEdit(this, taskId);
+            });
+        });
+
+        // Click to edit work entry fields in timeline
+        document.querySelectorAll('.timeline-log .log-field[data-editable="true"], .timeline-log .log-note-inline[data-editable="true"]').forEach(field => {
+            field.addEventListener('click', function() {
+                const logItem = this.closest('.timeline-log');
+                const entryId = logItem.dataset.entryId;
                 const fieldName = this.dataset.field;
                 enableWorkEntryEdit(this, entryId, fieldName);
             });
