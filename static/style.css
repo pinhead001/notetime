@@ -1000,8 +1000,8 @@ kbd {
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    padding: 12px;
-    margin: 8px 0;
+    padding: 6px 12px;
+    margin: 4px 0;
     background: white;
     border-radius: 6px;
     border-left: 3px solid transparent;
@@ -1028,7 +1028,7 @@ kbd {
 }
 
 .timeline-log {
-    border-left-color: #9b59b6;
+    border-left-color: transparent;
 }
 
 .timeline-marker {
