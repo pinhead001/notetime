@@ -152,6 +152,11 @@
                     <!-- Work entry item -->
                     <div class="timeline-item timeline-log" data-entry-id="{{ entry.id }}">
                         <div class="timeline-content">
+                            <button hx-delete="/api/work_entries/{{ entry.id }}"
+                                    hx-confirm="Delete this time entry?"
+                                    class="btn-icon-sm btn-delete delete-log-btn"
+                                    data-action="delete-log"
+                                    title="Delete">×</button>
                             <span class="log-time-range">
                                 <span class="log-field" data-field="start_time" data-editable="true">{{ entry.start_time.strftime('%H:%M') if entry.start_time else '--:--' }}</span>
                                 -
@@ -249,10 +254,10 @@
             }
         });
 
-        // Reload page after successful task deletion
+        // Reload page after successful deletion (task or log entry)
         document.body.addEventListener('htmx:afterRequest', function(event) {
             const target = event.detail.target;
-            if (target && target.dataset.action === 'delete-task') {
+            if (target && (target.dataset.action === 'delete-task' || target.dataset.action === 'delete-log')) {
                 if (event.detail.successful) {
                     location.reload();
                 }
