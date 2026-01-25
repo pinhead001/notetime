@@ -151,9 +151,6 @@
 
                     <!-- Work entry item -->
                     <div class="timeline-item timeline-log" data-entry-id="{{ entry.id }}">
-                        <div class="timeline-marker timeline-marker-time">
-                            {% if entry.start_time %}{{ entry.start_time.strftime('%H:%M') }}{% else %}--:--{% endif %}
-                        </div>
                         <div class="timeline-content">
                             <span class="log-time-range">
                                 <span class="log-field" data-field="start_time" data-editable="true">{{ entry.start_time if entry.start_time else '--:--' }}</span>
