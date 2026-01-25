@@ -1138,14 +1138,6 @@ kbd {
     border-radius: 3px;
 }
 
-.delegate-badge {
-    background: #e8f5e9;
-    color: #2e7d32;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 0.85em;
-}
-
 /* Delegated task styling */
 .task-item.task-delegated,
 .timeline-task.task-delegated {
@@ -1186,6 +1178,12 @@ kbd {
     font-size: 0.85em;
     font-weight: 500;
     box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.delegate-badge::before {
+    content: "→";
+    margin-right: 6px;
+    font-size: 1.2em;
 }
 
 /* Duration field styling */
