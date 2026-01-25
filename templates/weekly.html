@@ -65,84 +65,6 @@
             </div>
         </section>
 
-        <!-- Chronological Timeline (Notebook View) -->
-        <section class="timeline-section">
-            <h2>📖 This Week</h2>
-
-            {% if timeline %}
-            <div class="timeline">
-                {% set current_date = namespace(value=None) %}
-                {% for item in timeline %}
-                    <!-- Date separator -->
-                    {% if item.date != current_date.value %}
-                        {% set current_date.value = item.date %}
-                        <div class="timeline-date-header">
-                            <span class="timeline-date">{{ item.date.strftime('%A, %B %d') }}</span>
-                        </div>
-                    {% endif %}
-
-                    <!-- Timeline item -->
-                    {% if item.type == 'task' %}
-                        <!-- Task item -->
-                        <div class="timeline-item timeline-task task-{{ item.data.state }}"
-                             id="task-{{ item.data.id }}"
-                             data-task-id="{{ item.data.id }}">
-                            <div class="timeline-marker">{% if item.data.state == 'completed' %}✓{% else %}○{% endif %}</div>
-                            <div class="timeline-content">
-                                <div class="task-actions-inline">
-                                    <button hx-put="/api/tasks/{{ item.data.id }}/complete"
-                                            hx-target="#task-{{ item.data.id }}"
-                                            hx-swap="outerHTML"
-                                            class="btn-icon-sm"
-                                            title="Complete">✓</button>
-                                    <button hx-delete="/api/tasks/{{ item.data.id }}"
-                                            hx-confirm="Delete?"
-                                            class="btn-icon-sm btn-delete"
-                                            data-action="delete-task"
-                                            title="Delete">×</button>
-                                </div>
-                                <span class="task-title-inline" data-editable="true">{{ item.data.title }}</span>
-                                <span class="task-meta-inline">
-                                    <span class="priority-badge">P{{ item.data.priority }}</span>
-                                    {% if item.data.delegate %}
-                                    <span class="delegate-badge">
-                                        {{ item.data.delegate }}
-                                        <button class="undelegate-btn"
-                                                onclick="undelegateTask({{ item.data.id }}); event.stopPropagation();"
-                                                title="Undelegate this task">×</button>
-                                    </span>
-                                    {% endif %}
-                                </span>
-                            </div>
-                        </div>
-                    {% else %}
-                        <!-- Work entry item -->
-                        <div class="timeline-item timeline-log" data-entry-id="{{ item.data.id }}">
-                            <div class="timeline-marker timeline-marker-time">
-                                {% if item.data.start_time %}{{ item.data.start_time.strftime('%H:%M') }}{% else %}--:--{% endif %}
-                            </div>
-                            <div class="timeline-content">
-                                <span class="log-time-range">
-                                    <span class="log-field" data-field="start_time" data-editable="true">{{ item.data.start_time if item.data.start_time else '--:--' }}</span>
-                                    -
-                                    <span class="log-field" data-field="end_time" data-editable="true">{{ item.data.end_time if item.data.end_time else '--:--' }}</span>
-                                </span>
-                                <span class="log-duration-inline log-field" data-field="minutes" data-editable="true" title="Click to edit duration">{{ (item.data.minutes / 60)|round(2) }}h</span>
-                                {% if item.data.note %}
-                                <span class="log-note-inline" data-field="note" data-editable="true">{{ item.data.note }}</span>
-                                {% else %}
-                                <span class="log-note-inline log-note-empty" data-field="note" data-editable="true">(no note)</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                    {% endif %}
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="empty-state">Nothing logged yet. Start by typing above!</p>
-            {% endif %}
-        </section>
-
         <!-- Weekly Priorities Section -->
         <section class="priorities">
             <h2>📋 Weekly Priorities</h2>
@@ -216,27 +138,40 @@
             <h2>⏱️ Daily Log</h2>
 
             {% if work_entries %}
-            <div class="log-entries">
-                {% for entry in work_entries %}
-                <div class="log-entry" data-entry-id="{{ entry.id }}">
-                    <span class="log-field log-date" data-field="date" data-editable="true" title="Click to edit date">{{ entry.date }}</span>
-                    <span class="log-separator">|</span>
-                    <span class="log-field log-time" data-field="start_time" data-editable="true" title="Click to edit start time">{{ entry.start_time if entry.start_time else '--:--' }}</span>
-                    <span>-</span>
-                    <span class="log-field log-time" data-field="end_time" data-editable="true" title="Click to edit end time">{{ entry.end_time if entry.end_time else '--:--' }}</span>
-                    <span class="log-separator">|</span>
-                    <span class="log-duration log-field" data-field="minutes" data-editable="true" title="Click to edit duration">{{ (entry.minutes / 60)|round(2) }}h</span>
-                    <span class="log-separator">|</span>
-                    {% if entry.note %}
-                    <span class="log-field log-note" data-field="note" data-editable="true" title="Click to edit note">{{ entry.note }}</span>
-                    {% else %}
-                    <span class="log-field log-note-empty" data-field="note" data-editable="true" title="Click to add note">(no note)</span>
+            <div class="timeline">
+                {% set current_date = namespace(value=None) %}
+                {% for entry in work_entries | sort(attribute='date') %}
+                    <!-- Date separator -->
+                    {% if entry.date != current_date.value %}
+                        {% set current_date.value = entry.date %}
+                        <div class="timeline-date-header">
+                            <span class="timeline-date">{{ entry.date.strftime('%A, %B %d') }}</span>
+                        </div>
                     {% endif %}
-                </div>
+
+                    <!-- Work entry item -->
+                    <div class="timeline-item timeline-log" data-entry-id="{{ entry.id }}">
+                        <div class="timeline-marker timeline-marker-time">
+                            {% if entry.start_time %}{{ entry.start_time.strftime('%H:%M') }}{% else %}--:--{% endif %}
+                        </div>
+                        <div class="timeline-content">
+                            <span class="log-time-range">
+                                <span class="log-field" data-field="start_time" data-editable="true">{{ entry.start_time if entry.start_time else '--:--' }}</span>
+                                -
+                                <span class="log-field" data-field="end_time" data-editable="true">{{ entry.end_time if entry.end_time else '--:--' }}</span>
+                            </span>
+                            <span class="log-duration-inline log-field" data-field="minutes" data-editable="true" title="Click to edit duration">{{ (entry.minutes / 60)|round(2) }}h</span>
+                            {% if entry.note %}
+                            <span class="log-note-inline" data-field="note" data-editable="true">{{ entry.note }}</span>
+                            {% else %}
+                            <span class="log-note-inline log-note-empty" data-field="note" data-editable="true">(no note)</span>
+                            {% endif %}
+                        </div>
+                    </div>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="empty-state">No time logged yet.</p>
+            <p class="empty-state">No time logged yet. Start by typing above!</p>
             {% endif %}
 
             <!-- Add Log Entry Form (HTMX) -->
