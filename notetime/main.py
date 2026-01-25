@@ -177,6 +177,48 @@ def update_task(
     return db_task
 
 
+# API version of update task (for JSON requests from frontend)
+@app.put("/api/tasks/{task_id}", response_model=TaskResponse)
+def update_task_api(
+    task_id: int,
+    task_update: TaskUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing task (API endpoint for JSON requests).
+
+    Same as PUT /tasks/{task_id} but with /api prefix for frontend consistency.
+    """
+    db_task = db.get(Task, task_id)
+    if not db_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {task_id} not found"
+        )
+
+    # Update fields if provided
+    if task_update.title is not None:
+        db_task.title = task_update.title
+    if task_update.state is not None:
+        # Validate state
+        valid_states = [s.value for s in TaskState]
+        if task_update.state not in valid_states:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid state. Must be one of: {valid_states}"
+            )
+        db_task.state = task_update.state
+    if task_update.priority is not None:
+        db_task.priority = task_update.priority
+    if task_update.delegate is not None:
+        db_task.delegate = task_update.delegate
+
+    db.commit()
+    db.refresh(db_task)
+
+    return db_task
+
+
 @app.get("/tasks/{task_id}", response_model=TaskResponse)
 def get_task(task_id: int, db: Session = Depends(get_db)):
     """
