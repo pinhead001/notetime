@@ -105,7 +105,12 @@
                                 <span class="task-meta-inline">
                                     <span class="priority-badge">P{{ item.data.priority }}</span>
                                     {% if item.data.delegate %}
-                                    <span class="delegate-badge">{{ item.data.delegate }}</span>
+                                    <span class="delegate-badge">
+                                        {{ item.data.delegate }}
+                                        <button class="undelegate-btn"
+                                                onclick="undelegateTask({{ item.data.id }}); event.stopPropagation();"
+                                                title="Undelegate this task">×</button>
+                                    </span>
                                     {% endif %}
                                 </span>
                             </div>
@@ -171,7 +176,12 @@
                     <div class="task-content">
                         <span class="task-title" data-editable="true">{{ task.title }}</span>
                         {% if task.delegate %}
-                        <span class="task-delegate">{{ task.delegate }}</span>
+                        <span class="task-delegate">
+                            {{ task.delegate }}
+                            <button class="undelegate-btn"
+                                    onclick="undelegateTask({{ task.id }}); event.stopPropagation();"
+                                    title="Undelegate this task">×</button>
+                        </span>
                         {% endif %}
                         <span class="task-meta">
                             {% if task.project_id and projects %}
@@ -424,19 +434,63 @@
             });
         }
 
+        function undelegateTask(taskId) {
+            if (confirm('Undelegate this task and return it to active status?')) {
+                fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ delegate: null, state: 'active' })
+                }).then(() => location.reload());
+            }
+        }
+
         function triggerDelegate() {
             if (!selectedTask) {
                 alert('Please select a task first by clicking on it');
                 return;
             }
             const taskId = selectedTask.dataset.taskId;
-            const delegateTo = prompt('Delegate to:');
-            if (delegateTo) {
-                fetch(`/api/tasks/${taskId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ delegate: delegateTo, state: 'delegated' })
-                }).then(() => location.reload());
+
+            // Check if already delegated
+            const delegateSpan = selectedTask.querySelector('.task-delegate');
+            const currentDelegate = delegateSpan ? delegateSpan.textContent.trim() : null;
+
+            if (currentDelegate) {
+                // Task is already delegated - offer to undelegate or change
+                const action = confirm(
+                    `Currently delegated to: ${currentDelegate}\n\n` +
+                    'Click OK to undelegate (return to active).\n' +
+                    'Click Cancel to change delegate name.'
+                );
+
+                if (action) {
+                    // Undelegate - clear delegate and set state to active
+                    fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ delegate: null, state: 'active' })
+                    }).then(() => location.reload());
+                } else {
+                    // Change delegate
+                    const newDelegate = prompt('Delegate to:', currentDelegate);
+                    if (newDelegate && newDelegate.trim()) {
+                        fetch(`/api/tasks/${taskId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ delegate: newDelegate.trim(), state: 'delegated' })
+                        }).then(() => location.reload());
+                    }
+                }
+            } else {
+                // Not delegated - delegate it
+                const delegateTo = prompt('Delegate to:');
+                if (delegateTo && delegateTo.trim()) {
+                    fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ delegate: delegateTo.trim(), state: 'delegated' })
+                    }).then(() => location.reload());
+                }
             }
         }
 

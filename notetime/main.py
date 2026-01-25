@@ -154,10 +154,10 @@ def update_task(
             detail=f"Task with id {task_id} not found"
         )
 
-    # Update fields if provided
-    if task_update.title is not None:
+    # Update fields if provided (check model_fields_set to distinguish between None and not provided)
+    if 'title' in task_update.model_fields_set:
         db_task.title = task_update.title
-    if task_update.state is not None:
+    if 'state' in task_update.model_fields_set:
         # Validate state
         valid_states = [s.value for s in TaskState]
         if task_update.state not in valid_states:
@@ -166,9 +166,10 @@ def update_task(
                 detail=f"Invalid state. Must be one of: {valid_states}"
             )
         db_task.state = task_update.state
-    if task_update.priority is not None:
+    if 'priority' in task_update.model_fields_set:
         db_task.priority = task_update.priority
-    if task_update.delegate is not None:
+    if 'delegate' in task_update.model_fields_set:
+        # Allow setting delegate to None to clear it
         db_task.delegate = task_update.delegate
 
     db.commit()
@@ -196,10 +197,10 @@ def update_task_api(
             detail=f"Task with id {task_id} not found"
         )
 
-    # Update fields if provided
-    if task_update.title is not None:
+    # Update fields if provided (check model_fields_set to distinguish between None and not provided)
+    if 'title' in task_update.model_fields_set:
         db_task.title = task_update.title
-    if task_update.state is not None:
+    if 'state' in task_update.model_fields_set:
         # Validate state
         valid_states = [s.value for s in TaskState]
         if task_update.state not in valid_states:
@@ -208,9 +209,10 @@ def update_task_api(
                 detail=f"Invalid state. Must be one of: {valid_states}"
             )
         db_task.state = task_update.state
-    if task_update.priority is not None:
+    if 'priority' in task_update.model_fields_set:
         db_task.priority = task_update.priority
-    if task_update.delegate is not None:
+    if 'delegate' in task_update.model_fields_set:
+        # Allow setting delegate to None to clear it
         db_task.delegate = task_update.delegate
 
     db.commit()

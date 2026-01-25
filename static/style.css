@@ -1199,3 +1199,27 @@ kbd {
 .log-duration-inline.log-field:hover {
     background-color: #f3e5f5;
 }
+
+/* Undelegate button */
+.undelegate-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1.2em;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0 0 0 6px;
+    margin-left: 4px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.undelegate-btn:hover {
+    color: white;
+    transform: scale(1.2);
+}
+
+.task-delegate .undelegate-btn,
+.delegate-badge .undelegate-btn {
+    vertical-align: middle;
+}
