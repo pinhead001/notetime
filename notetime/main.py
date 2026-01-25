@@ -747,6 +747,18 @@ def list_projects(active_only: bool = True, db: Session = Depends(get_db)):
     return projects
 
 
+@app.get("/projects/manage", response_class=HTMLResponse)
+async def projects_management(request: Request, db: Session = Depends(get_db)):
+    """Serve projects management page"""
+    # Get all projects (both active and inactive)
+    all_projects = db.scalars(select(Project).order_by(Project.is_active.desc(), Project.name)).all()
+
+    return templates.TemplateResponse("projects.html", {
+        "request": request,
+        "projects": all_projects
+    })
+
+
 @app.get("/projects/{project_id}", response_model=ProjectResponse)
 def get_project(project_id: int, db: Session = Depends(get_db)):
     """
@@ -851,18 +863,6 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary
-    })
-
-
-@app.get("/projects/manage", response_class=HTMLResponse)
-async def projects_management(request: Request, db: Session = Depends(get_db)):
-    """Serve projects management page"""
-    # Get all projects (both active and inactive)
-    all_projects = db.scalars(select(Project).order_by(Project.is_active.desc(), Project.name)).all()
-
-    return templates.TemplateResponse("projects.html", {
-        "request": request,
-        "projects": all_projects
     })
 
 
@@ -1183,8 +1183,28 @@ async def log_form_partial(request: Request, week_id: int, db: Session = Depends
             // Remove any non-digit/colon characters
             value = value.replace(/[^0-9:]/g, '');
 
-            // If just a number (hour only)
+            // If just a number (no colon)
             if (!value.includes(':')) {{
+                // Handle formats like 930 (9:30), 1430 (14:30), or just 9 (9:00)
+                if (value.length === 3 || value.length === 4) {{
+                    // Parse as HHMM or HMM
+                    let hour, minute;
+                    if (value.length === 3) {{
+                        // HMM format (e.g., 930 = 9:30)
+                        hour = parseInt(value.substring(0, 1));
+                        minute = parseInt(value.substring(1, 3));
+                    }} else {{
+                        // HHMM format (e.g., 1430 = 14:30)
+                        hour = parseInt(value.substring(0, 2));
+                        minute = parseInt(value.substring(2, 4));
+                    }}
+
+                    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {{
+                        return hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0');
+                    }}
+                }}
+
+                // Single or double digit hour only
                 let hour = parseInt(value);
                 if (isNaN(hour)) return '';
 
