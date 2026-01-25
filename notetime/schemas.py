@@ -12,6 +12,8 @@ class TaskCreate(BaseModel):
     priority: int = 3
     project_id: Optional[int] = None
     delegate: Optional[str] = None
+    parent_task_id: Optional[int] = None
+    sort_order: int = 0
 
 
 class TaskUpdate(BaseModel):
@@ -20,6 +22,8 @@ class TaskUpdate(BaseModel):
     state: Optional[str] = None
     priority: Optional[int] = None
     delegate: Optional[str] = None
+    parent_task_id: Optional[int] = None
+    sort_order: Optional[int] = None
 
 # ------------------------------
 # WorkEntry input
@@ -98,6 +102,8 @@ class TaskResponse(BaseModel):
     priority: int
     project_id: Optional[int] = None
     delegate: Optional[str] = None
+    parent_task_id: Optional[int] = None
+    sort_order: int = 0
 
 
 # ------------------------------

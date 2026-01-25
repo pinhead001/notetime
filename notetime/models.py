@@ -60,9 +60,26 @@ class Task(Base):
     priority: Mapped[int] = mapped_column(Integer, default=3)
     project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"), nullable=True, default=None)
     delegate: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+    parent_task_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tasks.id"), nullable=True, default=None)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     week: Mapped["Week"] = relationship("Week", back_populates="tasks", init=False)
     project: Mapped[Optional["Project"]] = relationship("Project", back_populates="tasks", init=False)
+    parent_task: Mapped[Optional["Task"]] = relationship(
+        "Task",
+        remote_side=[id],
+        foreign_keys=[parent_task_id],
+        back_populates="subtasks",
+        init=False
+    )
+    subtasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        back_populates="parent_task",
+        foreign_keys=[parent_task_id],
+        cascade="all, delete-orphan",
+        default_factory=list,
+        init=False
+    )
     work_entries: Mapped[list["WorkEntry"]] = relationship(
         "WorkEntry",
         back_populates="task",

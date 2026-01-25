@@ -1234,3 +1234,189 @@ kbd {
 .timeline-log:hover .delete-log-btn {
     opacity: 1;
 }
+
+/* ========================================
+   Day 12: Expandable/Collapsible Sections
+   ======================================== */
+
+.section-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+    padding: 10px;
+    margin: -10px;
+    border-radius: 4px;
+}
+
+.section-header:hover {
+    background-color: #f8f9fa;
+}
+
+.section-header.collapsible {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toggle-icon {
+    display: inline-block;
+    font-size: 0.8em;
+    transition: transform 0.2s;
+}
+
+.section-content {
+    margin-top: 15px;
+}
+
+/* ========================================
+   Day 12: PM Section Styles
+   ======================================== */
+
+.pm-section {
+    margin-bottom: 40px;
+    padding: 20px;
+    background: linear-gradient(to bottom, #f8f9fa 0%, #ffffff 100%);
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+}
+
+.pm-tree {
+    margin-top: 15px;
+}
+
+.pm-project {
+    margin-bottom: 30px;
+    padding: 15px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+}
+
+.pm-project-header {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 4px;
+}
+
+.pm-task, .pm-subtask {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    margin: 6px 0;
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.pm-task {
+    margin-left: 20px;
+}
+
+.pm-subtask {
+    margin-left: 60px;
+    border-left: 3px solid #adb5bd;
+}
+
+.pm-task:hover, .pm-subtask:hover {
+    background: #f8f9fa;
+    border-color: #adb5bd;
+}
+
+.pm-task.pm-selected, .pm-subtask.pm-selected {
+    background: #e3f2fd;
+    border-color: #2196f3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+}
+
+.pm-task-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.pm-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #ced4da;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.pm-btn:hover {
+    background: #f8f9fa;
+    border-color: #adb5bd;
+}
+
+.pm-priority {
+    font-weight: 600;
+    font-size: 0.75em;
+}
+
+.pm-priority:hover {
+    background: #fff3cd;
+    border-color: #ffc107;
+}
+
+.pm-delegate:hover {
+    background: #e3f2fd;
+    border-color: #2196f3;
+}
+
+.pm-complete:hover {
+    background: #d4edda;
+    border-color: #28a745;
+}
+
+.pm-delete:hover {
+    background: #f8d7da;
+    border-color: #dc3545;
+}
+
+.pm-task-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pm-task-title {
+    flex: 1;
+}
+
+.pm-task-delegate {
+    font-size: 0.85em;
+    color: #6c757d;
+    padding: 2px 8px;
+    background: #e9ecef;
+    border-radius: 12px;
+}
+
+.pm-task-state {
+    color: #28a745;
+    font-size: 1.2em;
+}
+
+.pm-subtasks {
+    margin-top: 8px;
+}
+
+/* Empty state in PM section */
+.pm-section .empty-state {
+    text-align: center;
+    padding: 30px;
+    color: #6c757d;
+    font-style: italic;
+}

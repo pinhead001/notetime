@@ -65,9 +65,108 @@
             </div>
         </section>
 
+        <!-- Project Management Section -->
+        <section class="pm-section">
+            <h2 class="section-header collapsible" onclick="toggleSection('pm-section')">
+                <span class="toggle-icon">▼</span>
+                📁 Projects &amp; Tasks
+            </h2>
+            <div class="section-content" id="pm-section-content">
+                {% if all_projects %}
+                <div class="pm-tree">
+                    {% for project in all_projects %}
+                    <div class="pm-project" data-project-id="{{ project.id }}">
+                        <div class="pm-project-header">{{ project.name }}</div>
+
+                        {% set project_tasks = all_tasks | selectattr('project_id', 'equalto', project.id) | selectattr('parent_task_id', 'equalto', None) | list %}
+                        {% for task in project_tasks | sort(attribute='sort_order') %}
+                        <div class="pm-task" data-task-id="{{ task.id }}" tabindex="0">
+                            <div class="pm-task-controls">
+                                <button class="pm-btn pm-priority"
+                                        onclick="cyclePriority({{ task.id }}, {{ task.priority if task.priority is not none else 'null' }}); event.stopPropagation();"
+                                        title="Cycle priority">
+                                    {% if task.priority == 0 %}P0
+                                    {% elif task.priority == 1 %}P1
+                                    {% elif task.priority == 2 %}P2
+                                    {% elif task.priority == 3 %}P3
+                                    {% else %}--{% endif %}
+                                </button>
+                                <button class="pm-btn pm-delegate"
+                                        onclick="delegateTask({{ task.id }}); event.stopPropagation();"
+                                        title="Delegate">→</button>
+                                <button class="pm-btn pm-complete"
+                                        onclick="completeTask({{ task.id }}); event.stopPropagation();"
+                                        title="Complete">✓</button>
+                                <button class="pm-btn pm-delete"
+                                        onclick="deleteTask({{ task.id }}); event.stopPropagation();"
+                                        title="Delete">×</button>
+                            </div>
+                            <div class="pm-task-content">
+                                <span class="pm-task-title">{{ task.title }}</span>
+                                {% if task.delegate %}
+                                <span class="pm-task-delegate">→ {{ task.delegate }}</span>
+                                {% endif %}
+                                {% if task.state == 'completed' %}
+                                <span class="pm-task-state">✓</span>
+                                {% endif %}
+                            </div>
+
+                            {% set subtasks = all_tasks | selectattr('parent_task_id', 'equalto', task.id) | list %}
+                            {% if subtasks %}
+                            <div class="pm-subtasks">
+                                {% for subtask in subtasks | sort(attribute='sort_order') %}
+                                <div class="pm-subtask" data-task-id="{{ subtask.id }}" tabindex="0">
+                                    <div class="pm-task-controls">
+                                        <button class="pm-btn pm-priority"
+                                                onclick="cyclePriority({{ subtask.id }}, {{ subtask.priority if subtask.priority is not none else 'null' }}); event.stopPropagation();"
+                                                title="Cycle priority">
+                                            {% if subtask.priority == 0 %}P0
+                                            {% elif subtask.priority == 1 %}P1
+                                            {% elif subtask.priority == 2 %}P2
+                                            {% elif subtask.priority == 3 %}P3
+                                            {% else %}--{% endif %}
+                                        </button>
+                                        <button class="pm-btn pm-delegate"
+                                                onclick="delegateTask({{ subtask.id }}); event.stopPropagation();"
+                                                title="Delegate">→</button>
+                                        <button class="pm-btn pm-complete"
+                                                onclick="completeTask({{ subtask.id }}); event.stopPropagation();"
+                                                title="Complete">✓</button>
+                                        <button class="pm-btn pm-delete"
+                                                onclick="deleteTask({{ subtask.id }}); event.stopPropagation();"
+                                                title="Delete">×</button>
+                                    </div>
+                                    <div class="pm-task-content">
+                                        <span class="pm-task-title">{{ subtask.title }}</span>
+                                        {% if subtask.delegate %}
+                                        <span class="pm-task-delegate">→ {{ subtask.delegate }}</span>
+                                        {% endif %}
+                                        {% if subtask.state == 'completed' %}
+                                        <span class="pm-task-state">✓</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="empty-state">No projects yet. Create one to get started!</p>
+                {% endif %}
+            </div>
+        </section>
+
         <!-- Weekly Priorities Section -->
         <section class="priorities">
-            <h2>📋 Weekly Priorities</h2>
+            <h2 class="section-header collapsible" onclick="toggleSection('priorities')">
+                <span class="toggle-icon">▼</span>
+                📋 Weekly Priorities (P1 only)
+            </h2>
+            <div class="section-content" id="priorities-content">
 
             {% if tasks %}
             <div class="task-list">
@@ -135,8 +234,11 @@
 
         <!-- Daily Log Section -->
         <section class="daily-log">
-            <h2>⏱️ Daily Log</h2>
-
+            <h2 class="section-header collapsible" onclick="toggleSection('daily-log')">
+                <span class="toggle-icon">▼</span>
+                ⏱️ Daily Log
+            </h2>
+            <div class="section-content" id="daily-log-content">
             {% if work_entries %}
             <div class="timeline">
                 {% set current_date = namespace(value=None) %}
@@ -183,12 +285,16 @@
                         hx-swap="innerHTML"
                         class="btn-add">+ Log Time</button>
             </div>
+            </div>
         </section>
 
         <!-- Summary Section -->
         <section class="summary">
-            <h2>📊 Weekly Summary</h2>
-
+            <h2 class="section-header collapsible" onclick="toggleSection('summary')">
+                <span class="toggle-icon">▼</span>
+                📊 Weekly Summary
+            </h2>
+            <div class="section-content" id="summary-content">
             {% if summary %}
             <table class="summary-table">
                 <thead>
@@ -227,6 +333,7 @@
             {% else %}
             <p class="empty-state">No time logged to summarize.</p>
             {% endif %}
+            </div>
         </section>
 
         <!-- Footer -->
@@ -263,6 +370,238 @@
                 }
             }
         });
+
+        // ========================================
+        // Day 12: Section Collapse/Expand
+        // ========================================
+
+        function toggleSection(sectionName) {
+            const content = document.getElementById(`${sectionName}-content`);
+            const header = content.previousElementSibling;
+            const icon = header.querySelector('.toggle-icon');
+
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                icon.textContent = '▼';
+            } else {
+                content.style.display = 'none';
+                icon.textContent = '▶';
+            }
+        }
+
+        // ========================================
+        // Day 12: PM Section - Priority Cycling
+        // ========================================
+
+        async function cyclePriority(taskId, currentPriority) {
+            // Cycle through: null/3 -> 0 -> 1 -> 2 -> 3 -> 0...
+            let newPriority;
+            if (currentPriority === null || currentPriority === 3) {
+                newPriority = 0;
+            } else if (currentPriority === 0) {
+                newPriority = 1;
+            } else if (currentPriority === 1) {
+                newPriority = 2;
+            } else if (currentPriority === 2) {
+                newPriority = 3;
+            } else {
+                newPriority = 0;
+            }
+
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ priority: newPriority })
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Error updating priority');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error updating priority');
+            }
+        }
+
+        async function completeTask(taskId) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}/complete`, {
+                    method: 'PUT'
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Error completing task');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error completing task');
+            }
+        }
+
+        async function delegateTask(taskId) {
+            const delegate = prompt('Delegate to:');
+            if (delegate && delegate.trim()) {
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ delegate: delegate.trim(), state: 'delegated' })
+                    });
+
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error delegating task');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Error delegating task');
+                }
+            }
+        }
+
+        async function deleteTask(taskId) {
+            if (confirm('Delete this task?')) {
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error deleting task');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Error deleting task');
+                }
+            }
+        }
+
+        // ========================================
+        // Day 12: PM Section - Task Movement
+        // ========================================
+
+        let selectedPMTask = null;
+
+        // PM task selection
+        document.querySelectorAll('.pm-task, .pm-subtask').forEach(task => {
+            task.addEventListener('click', function(e) {
+                // Don't select if clicking on a button
+                if (e.target.tagName === 'BUTTON') return;
+
+                // Deselect previous
+                if (selectedPMTask) {
+                    selectedPMTask.classList.remove('pm-selected');
+                }
+                // Select new
+                selectedPMTask = this;
+                selectedPMTask.classList.add('pm-selected');
+            });
+
+            task.addEventListener('focus', function() {
+                if (selectedPMTask && selectedPMTask !== this) {
+                    selectedPMTask.classList.remove('pm-selected');
+                }
+                selectedPMTask = this;
+                selectedPMTask.classList.add('pm-selected');
+            });
+        });
+
+        async function moveTaskUp(taskId) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}/move-up`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Error moving task');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error moving task');
+            }
+        }
+
+        async function moveTaskDown(taskId) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}/move-down`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Error moving task');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error moving task');
+            }
+        }
+
+        async function indentTask(taskId) {
+            // Find the previous sibling task and make this task a subtask of it
+            const taskEl = document.querySelector(`[data-task-id="${taskId}"]`);
+            if (!taskEl) return;
+
+            // Get all tasks in the same parent context
+            const parent = taskEl.parentElement;
+            const siblings = Array.from(parent.children).filter(el =>
+                el.classList.contains('pm-task') || el.classList.contains('pm-subtask')
+            );
+            const currentIndex = siblings.indexOf(taskEl);
+
+            if (currentIndex > 0) {
+                const prevTask = siblings[currentIndex - 1];
+                const newParentId = prevTask.dataset.taskId;
+
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ parent_task_id: parseInt(newParentId) })
+                    });
+
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error indenting task');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Error indenting task');
+                }
+            }
+        }
+
+        async function dedentTask(taskId) {
+            // Remove parent_task_id to make this a top-level task
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ parent_task_id: null })
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Error dedenting task');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error dedenting task');
+            }
+        }
 
         // ========================================
         // Day 11: Notebook Quick-Add
@@ -453,6 +792,39 @@
             }
 
             const key = e.key.toLowerCase();
+
+            // PM Section shortcuts (for selected PM task)
+            if (selectedPMTask && e.ctrlKey && e.shiftKey) {
+                const taskId = selectedPMTask.dataset.taskId;
+
+                // Ctrl+Shift+Up = Move up
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    moveTaskUp(taskId);
+                    return;
+                }
+
+                // Ctrl+Shift+Down = Move down
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    moveTaskDown(taskId);
+                    return;
+                }
+
+                // Ctrl+Shift+Right = Indent
+                if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    indentTask(taskId);
+                    return;
+                }
+
+                // Ctrl+Shift+Left = Dedent
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    dedentTask(taskId);
+                    return;
+                }
+            }
 
             // n = New task
             if (key === 'n') {
