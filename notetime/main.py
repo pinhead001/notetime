@@ -469,6 +469,19 @@ async def update_work_entry(
     return db_entry
 
 
+@app.delete("/api/work_entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_work_entry(entry_id: int, db: Session = Depends(get_db)):
+    """Delete a work entry."""
+    db_entry = db.get(WorkEntry, entry_id)
+    if not db_entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work entry with id {entry_id} not found"
+        )
+    db.delete(db_entry)
+    db.commit()
+
+
 # ============================================
 # Natural Language Entry (Notebook Mode)
 # ============================================

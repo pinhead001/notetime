@@ -1223,3 +1223,14 @@ kbd {
 .delegate-badge .undelegate-btn {
     vertical-align: middle;
 }
+
+/* Delete button for log entries */
+.delete-log-btn {
+    margin-right: 8px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.timeline-log:hover .delete-log-btn {
+    opacity: 1;
+}
