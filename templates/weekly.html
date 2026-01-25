@@ -153,9 +153,9 @@
                     <div class="timeline-item timeline-log" data-entry-id="{{ entry.id }}">
                         <div class="timeline-content">
                             <span class="log-time-range">
-                                <span class="log-field" data-field="start_time" data-editable="true">{{ entry.start_time if entry.start_time else '--:--' }}</span>
+                                <span class="log-field" data-field="start_time" data-editable="true">{{ entry.start_time.strftime('%H:%M') if entry.start_time else '--:--' }}</span>
                                 -
-                                <span class="log-field" data-field="end_time" data-editable="true">{{ entry.end_time if entry.end_time else '--:--' }}</span>
+                                <span class="log-field" data-field="end_time" data-editable="true">{{ entry.end_time.strftime('%H:%M') if entry.end_time else '--:--' }}</span>
                             </span>
                             <span class="log-duration-inline log-field" data-field="minutes" data-editable="true" title="Click to edit duration">{{ (entry.minutes / 60)|round(2) }}h</span>
                             {% if entry.note %}
