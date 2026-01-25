@@ -1145,3 +1145,59 @@ kbd {
     border-radius: 3px;
     font-size: 0.85em;
 }
+
+/* Delegated task styling */
+.task-item.task-delegated,
+.timeline-task.task-delegated {
+    opacity: 0.6;
+    background-color: #f9f9f9;
+}
+
+.task-item.task-delegated .task-title,
+.timeline-task.task-delegated .task-title-inline {
+    color: #95a5a6;
+    text-decoration: none;
+}
+
+.task-delegate {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    padding: 4px 12px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 16px;
+    font-size: 0.85em;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.task-delegate::before {
+    content: "→";
+    margin-right: 6px;
+    font-size: 1.2em;
+}
+
+.delegate-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+/* Duration field styling */
+.log-duration.log-field,
+.log-duration-inline.log-field {
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.log-duration.log-field:hover,
+.log-duration-inline.log-field:hover {
+    background-color: #f3e5f5;
+}

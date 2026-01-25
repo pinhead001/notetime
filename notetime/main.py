@@ -368,32 +368,53 @@ async def update_work_entry(
     start_time_obj = db_entry.start_time
     end_time_obj = db_entry.end_time
 
+    # Handle explicit start_time update
     if entry_update.start_time is not None:
-        try:
-            start_time_obj = datetime.strptime(entry_update.start_time, "%H:%M").time()
-            db_entry.start_time = start_time_obj
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invalid start time format. Use HH:MM"
-            )
+        if entry_update.start_time == "":
+            db_entry.start_time = None
+            start_time_obj = None
+        else:
+            try:
+                start_time_obj = datetime.strptime(entry_update.start_time, "%H:%M").time()
+                db_entry.start_time = start_time_obj
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid start time format. Use HH:MM"
+                )
 
+    # Handle explicit end_time update
     if entry_update.end_time is not None:
-        try:
-            end_time_obj = datetime.strptime(entry_update.end_time, "%H:%M").time()
-            db_entry.end_time = end_time_obj
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invalid end time format. Use HH:MM"
-            )
+        if entry_update.end_time == "":
+            db_entry.end_time = None
+            end_time_obj = None
+        else:
+            try:
+                end_time_obj = datetime.strptime(entry_update.end_time, "%H:%M").time()
+                db_entry.end_time = end_time_obj
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid end time format. Use HH:MM"
+                )
 
-    # Recalculate minutes if both times are present
-    if start_time_obj and end_time_obj:
+    # Handle minutes update
+    if entry_update.minutes is not None:
+        db_entry.minutes = entry_update.minutes
+
+        # If start_time exists and end_time wasn't explicitly set to null,
+        # calculate new end_time based on start_time + minutes
+        if start_time_obj and entry_update.end_time is None:
+            # Calculate new end time
+            start_dt = datetime.combine(datetime.today(), start_time_obj)
+            end_dt = start_dt + timedelta(minutes=entry_update.minutes)
+            db_entry.end_time = end_dt.time()
+            end_time_obj = db_entry.end_time
+
+    # Recalculate minutes if both times are present and minutes wasn't explicitly updated
+    if start_time_obj and end_time_obj and entry_update.minutes is None:
         calculated_minutes = calc_duration(start_time_obj, end_time_obj)
         db_entry.minutes = calculated_minutes
-    elif entry_update.minutes is not None:
-        db_entry.minutes = entry_update.minutes
 
     if entry_update.note is not None:
         db_entry.note = entry_update.note
