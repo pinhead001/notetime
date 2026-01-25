@@ -10,7 +10,7 @@ API will be available at:
     http://localhost:8000/docs (API docs)
     http://localhost:8000 (Web UI)
 """
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import List, Optional
 from pathlib import Path
 from io import StringIO
@@ -31,6 +31,7 @@ from notetime.schemas import (
     ProjectResponse
 )
 from notetime.summary import generate_weekly_summary
+from notetime.nl_parser import parse_entry, EntryType
 
 
 # Create database tables
@@ -401,6 +402,112 @@ async def update_work_entry(
     db.refresh(db_entry)
 
     return db_entry
+
+
+# ============================================
+# Natural Language Entry (Notebook Mode)
+# ============================================
+
+@app.post("/api/quick-add")
+async def quick_add_entry(
+    text: str = Form(...),
+    week_id: int = Form(...),
+    default_task_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Parse and create entry from natural language input.
+
+    Examples:
+    - "9-11 worked on API" → time entry
+    - "2h fixed bug" → time entry
+    - "P1 deploy to production" → task
+    - "@API update endpoints" → task with project
+
+    Returns:
+        Created entry (task or work entry)
+    """
+    parsed = parse_entry(text, week_id, default_task_id)
+
+    if parsed["type"] == EntryType.TIME_LOG:
+        data = parsed["data"]
+
+        # If no task_id provided, try to find or create a default task
+        if not data.get("task_id"):
+            # Look for a generic "Misc" task or create one
+            misc_task = db.scalar(
+                select(Task).where(
+                    Task.week_id == week_id,
+                    Task.title == "Misc"
+                )
+            )
+            if not misc_task:
+                misc_task = Task(
+                    title="Misc",
+                    week_id=week_id,
+                    state="active",
+                    priority=3
+                )
+                db.add(misc_task)
+                db.commit()
+                db.refresh(misc_task)
+            data["task_id"] = misc_task.id
+
+        # Create work entry
+        work_entry = WorkEntry(**data)
+        db.add(work_entry)
+        db.commit()
+        db.refresh(work_entry)
+
+        return {
+            "type": "time_log",
+            "entry": {
+                "id": work_entry.id,
+                "task_id": work_entry.task_id,
+                "date": str(work_entry.date),
+                "minutes": work_entry.minutes,
+                "note": work_entry.note
+            }
+        }
+
+    elif parsed["type"] == EntryType.TASK:
+        data = parsed["data"]
+
+        # Handle project name if provided
+        if "project_name" in data:
+            project_name = data.pop("project_name")
+            # Find or create project
+            project = db.scalar(
+                select(Project).where(Project.name == project_name)
+            )
+            if not project:
+                project = Project(name=project_name, is_active=True)
+                db.add(project)
+                db.commit()
+                db.refresh(project)
+            data["project_id"] = project.id
+
+        # Create task
+        task = Task(**data)
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+
+        return {
+            "type": "task",
+            "entry": {
+                "id": task.id,
+                "title": task.title,
+                "priority": task.priority,
+                "state": task.state
+            }
+        }
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not parse entry. Try formats like '9-11 worked on API' or 'P1 deploy feature'"
+        )
 
 
 # ============================================
@@ -841,13 +948,41 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     # Get weekly data
     weekly_data = get_week(week.id, db)
 
+    # Create chronological timeline (mix tasks and work entries)
+    timeline = []
+
+    # Add tasks with creation assumption (use today for active, completion date for done)
+    for task in weekly_data.tasks:
+        timeline.append({
+            "type": "task",
+            "date": today,  # Tasks show on today by default
+            "time": None,
+            "data": task
+        })
+
+    # Add work entries
+    for entry in weekly_data.work_entries:
+        timeline.append({
+            "type": "log",
+            "date": entry.date,
+            "time": entry.start_time,
+            "data": entry
+        })
+
+    # Sort by date, then time
+    timeline.sort(key=lambda x: (
+        x["date"],
+        x["time"] if x["time"] else datetime.min.time()
+    ))
+
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
         "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
-        "summary": weekly_data.summary
+        "summary": weekly_data.summary,
+        "timeline": timeline
     })
 
 
@@ -856,13 +991,42 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     """Serve weekly page for a specific week"""
     weekly_data = get_week(week_id, db)
 
+    # Create chronological timeline (mix tasks and work entries)
+    timeline = []
+    today = date.today()
+
+    # Add tasks
+    for task in weekly_data.tasks:
+        timeline.append({
+            "type": "task",
+            "date": today,
+            "time": None,
+            "data": task
+        })
+
+    # Add work entries
+    for entry in weekly_data.work_entries:
+        timeline.append({
+            "type": "log",
+            "date": entry.date,
+            "time": entry.start_time,
+            "data": entry
+        })
+
+    # Sort by date, then time
+    timeline.sort(key=lambda x: (
+        x["date"],
+        x["time"] if x["time"] else datetime.min.time()
+    ))
+
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
         "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
-        "summary": weekly_data.summary
+        "summary": weekly_data.summary,
+        "timeline": timeline
     })
 
 

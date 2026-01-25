@@ -894,3 +894,254 @@ kbd {
     border-radius: 4px;
     font-size: 1em;
 }
+
+/* ========================================
+   Day 11: Notebook Quick-Add
+   ======================================== */
+
+.notebook-quick-add {
+    margin: -10px 0 30px 0;
+    padding: 20px;
+    background: linear-gradient(to bottom, #fafafa 0%, #ffffff 100%);
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.quick-add-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.quick-add-icon {
+    font-size: 1.5em;
+    flex-shrink: 0;
+}
+
+.quick-add-input {
+    flex: 1;
+    font-size: 1.1em;
+    padding: 12px 16px;
+    border: none;
+    border-bottom: 2px solid #3498db;
+    background: transparent;
+    font-family: 'Kalam', cursive;
+    color: #2c3e50;
+    transition: all 0.3s;
+}
+
+.quick-add-input:focus {
+    outline: none;
+    border-bottom-color: #2980b9;
+    background: rgba(52, 152, 219, 0.05);
+}
+
+.quick-add-input::placeholder {
+    color: #95a5a6;
+    font-style: italic;
+}
+
+.quick-add-hints {
+    position: absolute;
+    bottom: -25px;
+    left: 50px;
+    display: flex;
+    gap: 10px;
+    font-size: 0.75em;
+    color: #95a5a6;
+}
+
+.hint-item {
+    padding: 2px 8px;
+    background: #ecf0f1;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.hint-item:hover {
+    background: #bdc3c7;
+    cursor: help;
+}
+
+/* ========================================
+   Chronological Timeline (Notebook View)
+   ======================================== */
+
+.timeline-section {
+    margin: 30px 0;
+    padding: 20px;
+    background: #fafafa;
+    border-radius: 8px;
+}
+
+.timeline {
+    position: relative;
+    padding-left: 0;
+}
+
+.timeline-date-header {
+    margin: 20px 0 10px 0;
+    padding: 8px 12px;
+    background: #34495e;
+    color: white;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+.timeline-date {
+    display: block;
+}
+
+.timeline-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+    margin: 8px 0;
+    background: white;
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+}
+
+.timeline-item:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transform: translateX(2px);
+}
+
+.timeline-task {
+    border-left-color: #3498db;
+}
+
+.timeline-task.task-completed {
+    opacity: 0.7;
+    border-left-color: #2ecc71;
+}
+
+.timeline-task.task-completed .task-title-inline {
+    text-decoration: line-through;
+    color: #95a5a6;
+}
+
+.timeline-log {
+    border-left-color: #9b59b6;
+}
+
+.timeline-marker {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #3498db;
+    color: white;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.timeline-task.task-completed .timeline-marker {
+    background: #2ecc71;
+}
+
+.timeline-marker-time {
+    background: #9b59b6;
+    font-size: 0.65em;
+    font-weight: 600;
+    width: 50px;
+    border-radius: 4px;
+}
+
+.timeline-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.task-title-inline {
+    font-weight: 500;
+    color: #2c3e50;
+    cursor: pointer;
+    flex: 1;
+    min-width: 200px;
+}
+
+.task-title-inline:hover {
+    color: #3498db;
+}
+
+.task-meta-inline {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 0.85em;
+}
+
+.task-actions-inline {
+    display: flex;
+    gap: 4px;
+}
+
+.btn-icon-sm {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid #bdc3c7;
+    border-radius: 3px;
+    background: white;
+    color: #7f8c8d;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s;
+}
+
+.btn-icon-sm:hover {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
+}
+
+.btn-icon-sm.btn-delete:hover {
+    background: #e74c3c;
+    border-color: #e74c3c;
+}
+
+.log-time-range {
+    font-family: 'Courier New', monospace;
+    color: #34495e;
+    font-weight: 600;
+}
+
+.log-duration-inline {
+    color: #9b59b6;
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.log-note-inline {
+    font-family: 'Kalam', cursive;
+    color: #555;
+    flex: 1;
+    cursor: pointer;
+}
+
+.log-note-inline:hover {
+    background: #e3f2fd;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.delegate-badge {
+    background: #e8f5e9;
+    color: #2e7d32;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.85em;
+}
