@@ -1577,16 +1577,31 @@ async def log_form_cancel():
 
 @app.put("/api/tasks/{task_id}/complete", response_class=HTMLResponse)
 async def complete_task(task_id: int, db: Session = Depends(get_db)):
-    """Mark task as completed (HTMX action)"""
+    """Mark task as completed and set priority to P0"""
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     task.state = TaskState.COMPLETED.value
+    task.priority = 0  # Set to P0 when completed
     db.commit()
 
     # Return updated task HTML
     return HTMLResponse(content=f'<div class="task-item task-completed">✓ {task.title} (Completed)</div>')
+
+
+@app.put("/api/tasks/{task_id}/uncomplete", response_class=HTMLResponse)
+async def uncomplete_task(task_id: int, db: Session = Depends(get_db)):
+    """Mark task as active (uncomplete)"""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task.state = TaskState.ACTIVE.value
+    db.commit()
+
+    # Return updated task HTML
+    return HTMLResponse(content=f'<div class="task-item task-active">{task.title}</div>')
 
 
 @app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)

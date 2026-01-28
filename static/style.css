@@ -1420,3 +1420,64 @@ kbd {
     color: #6c757d;
     font-style: italic;
 }
+
+/* ========================================
+   Day 12: Task Button Colors & States
+   ======================================== */
+
+/* Priority button colors */
+.pm-priority.priority-0 {
+    background-color: #e9ecef;
+    color: #495057;
+    border-color: #adb5bd;
+}
+
+.pm-priority.priority-1 {
+    background-color: #dc3545;
+    color: white;
+    border-color: #dc3545;
+}
+
+.pm-priority.priority-2 {
+    background-color: #ffc107;
+    color: #212529;
+    border-color: #ffc107;
+}
+
+/* Delegate button - purple when delegated */
+.pm-delegate.delegated {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #667eea;
+}
+
+/* Complete button - green when completed */
+.pm-complete.completed {
+    background-color: #28a745;
+    color: white;
+    border-color: #28a745;
+}
+
+.pm-complete.completed:hover {
+    background-color: #218838;
+    border-color: #1e7e34;
+}
+
+/* Strikethrough text when completed */
+.completed-text .task-title,
+.completed-text .pm-task-title {
+    text-decoration: line-through;
+    color: #6c757d;
+}
+
+/* Task actions in weekly section - match PM styling */
+.task-actions {
+    display: flex;
+    gap: 4px;
+}
+
+/* Override old task-actions button styles */
+.task-actions .pm-btn {
+    width: 28px;
+    height: 28px;
+}

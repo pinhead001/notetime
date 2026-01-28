@@ -82,32 +82,28 @@
                         {% for task in project_tasks | sort(attribute='sort_order') %}
                         <div class="pm-task" data-task-id="{{ task.id }}" tabindex="0">
                             <div class="pm-task-controls">
-                                <button class="pm-btn pm-priority"
+                                <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
+                                        class="pm-btn pm-complete {% if task.state == 'completed' %}completed{% endif %}"
+                                        title="{% if task.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
+                                <button class="pm-btn pm-priority priority-{{ task.priority }}"
                                         onclick="cyclePriority({{ task.id }}, {{ task.priority if task.priority is not none else 'null' }}); event.stopPropagation();"
                                         title="Cycle priority">
                                     {% if task.priority == 0 %}P0
                                     {% elif task.priority == 1 %}P1
                                     {% elif task.priority == 2 %}P2
-                                    {% elif task.priority == 3 %}P3
-                                    {% else %}--{% endif %}
+                                    {% else %}P0{% endif %}
                                 </button>
-                                <button class="pm-btn pm-delegate"
-                                        onclick="delegateTask({{ task.id }}); event.stopPropagation();"
-                                        title="Delegate">→</button>
-                                <button class="pm-btn pm-complete"
-                                        onclick="completeTask({{ task.id }}); event.stopPropagation();"
-                                        title="Complete">✓</button>
+                                <button class="pm-btn pm-delegate {% if task.delegate %}delegated{% endif %}"
+                                        onclick="toggleDelegate({{ task.id }}, {% if task.delegate %}'{{ task.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
+                                        title="{% if task.delegate %}Undelegate{% else %}Delegate{% endif %}">→</button>
                                 <button class="pm-btn pm-delete"
                                         onclick="deleteTask({{ task.id }}); event.stopPropagation();"
                                         title="Delete">×</button>
                             </div>
-                            <div class="pm-task-content">
+                            <div class="pm-task-content {% if task.state == 'completed' %}completed-text{% endif %}">
                                 <span class="pm-task-title">{{ task.title }}</span>
                                 {% if task.delegate %}
                                 <span class="pm-task-delegate">→ {{ task.delegate }}</span>
-                                {% endif %}
-                                {% if task.state == 'completed' %}
-                                <span class="pm-task-state">✓</span>
                                 {% endif %}
                             </div>
 
@@ -117,32 +113,28 @@
                                 {% for subtask in subtasks | sort(attribute='sort_order') %}
                                 <div class="pm-subtask" data-task-id="{{ subtask.id }}" tabindex="0">
                                     <div class="pm-task-controls">
-                                        <button class="pm-btn pm-priority"
+                                        <button onclick="toggleComplete({{ subtask.id }}, '{{ subtask.state }}'); event.stopPropagation();"
+                                                class="pm-btn pm-complete {% if subtask.state == 'completed' %}completed{% endif %}"
+                                                title="{% if subtask.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
+                                        <button class="pm-btn pm-priority priority-{{ subtask.priority }}"
                                                 onclick="cyclePriority({{ subtask.id }}, {{ subtask.priority if subtask.priority is not none else 'null' }}); event.stopPropagation();"
                                                 title="Cycle priority">
                                             {% if subtask.priority == 0 %}P0
                                             {% elif subtask.priority == 1 %}P1
                                             {% elif subtask.priority == 2 %}P2
-                                            {% elif subtask.priority == 3 %}P3
-                                            {% else %}--{% endif %}
+                                            {% else %}P0{% endif %}
                                         </button>
-                                        <button class="pm-btn pm-delegate"
-                                                onclick="delegateTask({{ subtask.id }}); event.stopPropagation();"
-                                                title="Delegate">→</button>
-                                        <button class="pm-btn pm-complete"
-                                                onclick="completeTask({{ subtask.id }}); event.stopPropagation();"
-                                                title="Complete">✓</button>
+                                        <button class="pm-btn pm-delegate {% if subtask.delegate %}delegated{% endif %}"
+                                                onclick="toggleDelegate({{ subtask.id }}, {% if subtask.delegate %}'{{ subtask.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
+                                                title="{% if subtask.delegate %}Undelegate{% else %}Delegate{% endif %}">→</button>
                                         <button class="pm-btn pm-delete"
                                                 onclick="deleteTask({{ subtask.id }}); event.stopPropagation();"
                                                 title="Delete">×</button>
                                     </div>
-                                    <div class="pm-task-content">
+                                    <div class="pm-task-content {% if subtask.state == 'completed' %}completed-text{% endif %}">
                                         <span class="pm-task-title">{{ subtask.title }}</span>
                                         {% if subtask.delegate %}
                                         <span class="pm-task-delegate">→ {{ subtask.delegate }}</span>
-                                        {% endif %}
-                                        {% if subtask.state == 'completed' %}
-                                        <span class="pm-task-state">✓</span>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -177,24 +169,26 @@
                      tabindex="0">
                     <!-- Task Actions (HTMX) on the left -->
                     <div class="task-actions">
-                        <button hx-put="/api/tasks/{{ task.id }}/complete"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-icon"
-                                title="Complete">✓</button>
-                        <button hx-put="/api/tasks/{{ task.id }}/defer"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-icon"
-                                title="Mark as Waiting">⏸</button>
-                        <button hx-delete="/api/tasks/{{ task.id }}"
-                                hx-confirm="Delete this task?"
-                                class="btn-icon btn-delete"
-                                data-action="delete-task"
-                                title="Delete">🗑</button>
+                        <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
+                                class="pm-btn pm-complete {% if task.state == 'completed' %}completed{% endif %}"
+                                title="{% if task.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
+                        <button class="pm-btn pm-priority priority-{{ task.priority }}"
+                                onclick="cyclePriority({{ task.id }}, {{ task.priority if task.priority is not none else 'null' }}); event.stopPropagation();"
+                                title="Cycle priority">
+                            {% if task.priority == 0 %}P0
+                            {% elif task.priority == 1 %}P1
+                            {% elif task.priority == 2 %}P2
+                            {% else %}P0{% endif %}
+                        </button>
+                        <button class="pm-btn pm-delegate {% if task.delegate %}delegated{% endif %}"
+                                onclick="toggleDelegate({{ task.id }}, {% if task.delegate %}'{{ task.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
+                                title="{% if task.delegate %}Undelegate{% else %}Delegate{% endif %}">→</button>
+                        <button class="pm-btn pm-delete"
+                                onclick="deleteTask({{ task.id }}); event.stopPropagation();"
+                                title="Delete">×</button>
                     </div>
 
-                    <div class="task-content">
+                    <div class="task-content {% if task.state == 'completed' %}completed-text{% endif %}">
                         <span class="task-title" data-editable="true">{{ task.title }}</span>
                         {% if task.delegate %}
                         <span class="task-delegate">
@@ -394,16 +388,14 @@
         // ========================================
 
         async function cyclePriority(taskId, currentPriority) {
-            // Cycle through: null/3 -> 0 -> 1 -> 2 -> 3 -> 0...
+            // Cycle through: P0 -> P1 -> P2 -> P0 (skip P3)
             let newPriority;
-            if (currentPriority === null || currentPriority === 3) {
-                newPriority = 0;
-            } else if (currentPriority === 0) {
+            if (currentPriority === null || currentPriority === 0) {
                 newPriority = 1;
             } else if (currentPriority === 1) {
                 newPriority = 2;
             } else if (currentPriority === 2) {
-                newPriority = 3;
+                newPriority = 0;
             } else {
                 newPriority = 0;
             }
@@ -426,42 +418,72 @@
             }
         }
 
-        async function completeTask(taskId) {
+        async function toggleComplete(taskId, currentState) {
             try {
-                const response = await fetch(`/api/tasks/${taskId}/complete`, {
-                    method: 'PUT'
-                });
-
-                if (response.ok) {
-                    location.reload();
-                } else {
-                    alert('Error completing task');
-                }
-            } catch (err) {
-                console.error(err);
-                alert('Error completing task');
-            }
-        }
-
-        async function delegateTask(taskId) {
-            const delegate = prompt('Delegate to:');
-            if (delegate && delegate.trim()) {
-                try {
-                    const response = await fetch(`/api/tasks/${taskId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ delegate: delegate.trim(), state: 'delegated' })
+                if (currentState === 'completed') {
+                    // Uncomplete the task
+                    const response = await fetch(`/api/tasks/${taskId}/uncomplete`, {
+                        method: 'PUT'
                     });
 
                     if (response.ok) {
                         location.reload();
                     } else {
-                        alert('Error delegating task');
+                        alert('Error uncompleting task');
                     }
-                } catch (err) {
-                    console.error(err);
-                    alert('Error delegating task');
+                } else {
+                    // Complete the task (will set priority to P0 and state to completed)
+                    const response = await fetch(`/api/tasks/${taskId}/complete`, {
+                        method: 'PUT'
+                    });
+
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error completing task');
+                    }
                 }
+            } catch (err) {
+                console.error(err);
+                alert('Error toggling task completion');
+            }
+        }
+
+        async function toggleDelegate(taskId, currentDelegate) {
+            try {
+                if (currentDelegate && currentDelegate !== 'null') {
+                    // Currently delegated - undelegate
+                    const response = await fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ delegate: null, state: 'active' })
+                    });
+
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error undelegating task');
+                    }
+                } else {
+                    // Not delegated - delegate it
+                    const delegate = prompt('Delegate to:');
+                    if (delegate && delegate.trim()) {
+                        const response = await fetch(`/api/tasks/${taskId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ delegate: delegate.trim(), state: 'delegated' })
+                        });
+
+                        if (response.ok) {
+                            location.reload();
+                        } else {
+                            alert('Error delegating task');
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error toggling delegation');
             }
         }
 
