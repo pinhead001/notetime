@@ -28,7 +28,7 @@ from notetime.schemas import (
     TaskCreate, TaskUpdate, TaskResponse,
     WorkEntryCreate, WorkEntryUpdate, WorkEntryResponse,
     WeekResponse, WeeklyView,
-    ProjectResponse
+    ProjectResponse, ProjectUpdate
 )
 from notetime.summary import generate_weekly_summary
 from notetime.nl_parser import parse_entry, EntryType
@@ -969,13 +969,19 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/api/projects/{project_id}", response_model=ProjectResponse)
-def update_project(project_id: int, is_active: bool, db: Session = Depends(get_db)):
+def update_project(
+    project_id: int,
+    project_update: ProjectUpdate = None,
+    is_active: bool = None,
+    db: Session = Depends(get_db)
+):
     """
-    Update a project's status.
+    Update a project's name and/or status.
 
     Args:
         project_id: ID of project to update
-        is_active: New active status
+        project_update: Project update data (for JSON body)
+        is_active: New active status (for query param, legacy support)
 
     Returns:
         Updated project
@@ -990,11 +996,45 @@ def update_project(project_id: int, is_active: bool, db: Session = Depends(get_d
             detail=f"Project with id {project_id} not found"
         )
 
-    project.is_active = is_active
+    # Handle both JSON body and query param for backwards compatibility
+    if project_update:
+        if project_update.name is not None:
+            project.name = project_update.name
+        if project_update.is_active is not None:
+            project.is_active = project_update.is_active
+    elif is_active is not None:
+        # Legacy query param support
+        project.is_active = is_active
+
     db.commit()
     db.refresh(project)
 
     return project
+
+
+@app.delete("/api/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(project_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a project and all associated tasks (cascade delete).
+
+    Args:
+        project_id: ID of project to delete
+
+    Raises:
+        404: If project not found
+    """
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+
+    # Cascade delete will automatically delete all tasks associated with this project
+    db.delete(project)
+    db.commit()
+
+    return None
 
 
 # ============================================
@@ -1032,8 +1072,8 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     # Get all tasks for PM section (organized by project, sorted by sort_order)
     all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
 
-    # Filter weekly tasks to only P1 tasks
-    p1_tasks = [t for t in weekly_data.tasks if t.priority == 1]
+    # Filter weekly tasks to P1-P3 (exclude P0)
+    priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
 
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
@@ -1065,7 +1105,7 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": p1_tasks,  # Only P1 tasks for weekly section
+        "tasks": priority_tasks,  # P1-P3 tasks for weekly section
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
@@ -1086,8 +1126,8 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     # Get all tasks for PM section (organized by project, sorted by sort_order)
     all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
 
-    # Filter weekly tasks to only P1 tasks
-    p1_tasks = [t for t in weekly_data.tasks if t.priority == 1]
+    # Filter weekly tasks to P1-P3 (exclude P0)
+    priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
 
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
@@ -1120,7 +1160,7 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": p1_tasks,  # Only P1 tasks for weekly section
+        "tasks": priority_tasks,  # P1-P3 tasks for weekly section
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,

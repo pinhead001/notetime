@@ -30,17 +30,26 @@
             <div class="projects-list" id="projects-list">
                 {% for project in projects %}
                 <div class="project-item {% if not project.is_active %}project-archived{% endif %}"
-                     data-status="{{ 'active' if project.is_active else 'archived' }}">
+                     data-status="{{ 'active' if project.is_active else 'archived' }}"
+                     data-project-id="{{ project.id }}">
                     <div class="project-info">
-                        <span class="project-name">{{ project.name }}</span>
+                        <span class="project-name" ondblclick="editProjectName({{ project.id }}, '{{ project.name }}')">{{ project.name }}</span>
                         <span class="project-status-badge {{ 'badge-active' if project.is_active else 'badge-archived' }}">
                             {{ 'Active' if project.is_active else 'Archived' }}
                         </span>
                     </div>
                     <div class="project-actions">
+                        <button class="btn-edit"
+                                onclick="editProjectName({{ project.id }}, '{{ project.name }}')">
+                            Edit
+                        </button>
                         <button class="btn-toggle"
                                 onclick="toggleProjectStatus({{ project.id }}, {{ 'false' if project.is_active else 'true' }})">
                             {{ 'Archive' if project.is_active else 'Activate' }}
+                        </button>
+                        <button class="btn-delete"
+                                onclick="deleteProject({{ project.id }}, '{{ project.name }}')">
+                            Delete
                         </button>
                     </div>
                 </div>
@@ -90,6 +99,59 @@
                 });
             });
         });
+
+        // Edit project name
+        async function editProjectName(projectId, currentName) {
+            const newName = prompt('Edit project name:', currentName);
+            if (!newName || newName.trim() === '' || newName === currentName) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/projects/${projectId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName.trim() })
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to update project name');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to update project name');
+            }
+        }
+
+        // Delete project with cascade warning
+        async function deleteProject(projectId, projectName) {
+            const confirmed = confirm(
+                `Delete project "${projectName}"?\n\n` +
+                `WARNING: This will also delete ALL tasks associated with this project!\n\n` +
+                `This action cannot be undone. Are you sure?`
+            );
+
+            if (!confirmed) return;
+
+            try {
+                const response = await fetch(`/api/projects/${projectId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to delete project');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to delete project');
+            }
+        }
 
         // Toggle project status
         async function toggleProjectStatus(projectId, newStatus) {
