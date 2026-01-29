@@ -271,17 +271,19 @@
                                 <span class="log-field" data-field="end_time" data-editable="true">{{ entry.end_time.strftime('%H:%M') if entry.end_time else '--:--' }}</span>
                             </span>
                             <span class="log-duration-inline log-field" data-field="minutes" data-editable="true" title="Click to edit duration">{{ (entry.minutes / 60)|round(2) }}h</span>
-                            {% if entry.task %}
-                                {% if entry.task.project %}
-                                <span class="log-project-badge">@{{ entry.task.project.name }}</span>
-                                {% endif %}
-                                <span class="log-task-badge">#{{ entry.task.title }}</span>
-                            {% endif %}
                             {% if entry.note %}
                             <span class="log-note-inline" data-field="note" data-editable="true">{{ entry.note }}</span>
                             {% else %}
                             <span class="log-note-inline log-note-empty" data-field="note" data-editable="true">(no note)</span>
                             {% endif %}
+                            <div class="log-badges">
+                                {% if entry.task %}
+                                    {% if entry.task.project %}
+                                    <span class="log-project-badge">@{{ entry.task.project.name }}</span>
+                                    {% endif %}
+                                    <span class="log-task-badge">#{{ entry.task.title }}</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                 {% endfor %}
