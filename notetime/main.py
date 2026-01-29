@@ -1168,7 +1168,7 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "timeline": timeline,
-        "all_projects": all_projects,  # All projects for PM section
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],  # Convert to dicts for JSON
         "all_tasks": all_tasks  # All tasks for PM section
     })
 
@@ -1223,7 +1223,7 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "timeline": timeline,
-        "all_projects": all_projects,  # All projects for PM section
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],  # Convert to dicts for JSON
         "all_tasks": all_tasks  # All tasks for PM section
     })
 
