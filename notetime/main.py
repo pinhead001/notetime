@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from notetime.db import SessionLocal, engine
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
@@ -743,11 +743,13 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
         select(Task).where(Task.week_id == week_id)
     ).all()
 
-    # Get all work entries for these tasks
+    # Get all work entries for these tasks (with task and project relationships)
     if tasks:
         task_ids = [task.id for task in tasks]
         work_entries = db.scalars(
-            select(WorkEntry).where(WorkEntry.task_id.in_(task_ids))
+            select(WorkEntry)
+            .where(WorkEntry.task_id.in_(task_ids))
+            .options(joinedload(WorkEntry.task).joinedload(Task.project))
         ).all()
     else:
         work_entries = []
