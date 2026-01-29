@@ -44,6 +44,31 @@ def parse_entry(text: str, current_week_id: int, default_task_id: Optional[int] 
     return {"type": EntryType.UNKNOWN, "data": {}}
 
 
+def _extract_project_task_from_description(description: str) -> tuple:
+    """
+    Extract @ProjectName and #TaskName from description.
+    Returns: (project_name, task_name, cleaned_description)
+
+    Example: "@API #UpdateEndpoints fixed bugs" → ("API", "UpdateEndpoints", "fixed bugs")
+    """
+    project_name = None
+    task_name = None
+
+    # Extract @ProjectName
+    project_match = re.search(r'@(\w+)', description)
+    if project_match:
+        project_name = project_match.group(1)
+        description = description.replace(project_match.group(0), '').strip()
+
+    # Extract #TaskName
+    task_match = re.search(r'#(\w+)', description)
+    if task_match:
+        task_name = task_match.group(1)
+        description = description.replace(task_match.group(0), '').strip()
+
+    return project_name, task_name, description
+
+
 def _parse_time_entry(text: str, week_id: int, default_task_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """
     Parse time entry formats:
@@ -51,6 +76,7 @@ def _parse_time_entry(text: str, week_id: int, default_task_id: Optional[int] = 
     - "930-1200 client meeting" → 9:30-12:00
     - "2h fixed bug" → 2 hours duration
     - "today 9-11 worked on API"
+    - "830-11 @ProjectName #TaskName description" → with project and task tagging
     """
     result = {}
     remaining_text = text
@@ -82,13 +108,18 @@ def _parse_time_entry(text: str, week_id: int, default_task_id: Optional[int] = 
 
             minutes = int((end_dt - start_dt).total_seconds() / 60)
 
+            # Extract project and task from description
+            project_name, task_name, cleaned_desc = _extract_project_task_from_description(description)
+
             return {
                 "date": entry_date,
                 "start_time": start_time,  # Return as time object, not string
                 "end_time": end_time,      # Return as time object, not string
                 "minutes": minutes,
-                "note": description.strip(),
-                "task_id": default_task_id
+                "note": cleaned_desc.strip(),
+                "task_id": default_task_id,
+                "project_name": project_name,
+                "task_name": task_name
             }
 
     # Pattern 2: Duration (2h, 90m, 1.5h)
@@ -104,11 +135,16 @@ def _parse_time_entry(text: str, week_id: int, default_task_id: Optional[int] = 
         else:  # minutes
             minutes = int(amount)
 
+        # Extract project and task from description
+        project_name, task_name, cleaned_desc = _extract_project_task_from_description(description)
+
         return {
             "date": entry_date,
             "minutes": minutes,
-            "note": description.strip(),
-            "task_id": default_task_id
+            "note": cleaned_desc.strip(),
+            "task_id": default_task_id,
+            "project_name": project_name,
+            "task_name": task_name
         }
 
     return None

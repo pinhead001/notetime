@@ -510,26 +510,84 @@ async def quick_add_entry(
     if parsed["type"] == EntryType.TIME_LOG:
         data = parsed["data"]
 
-        # If no task_id provided, try to find or create a default task
+        # Handle project and task name if provided
+        project_name = data.pop("project_name", None)
+        task_name = data.pop("task_name", None)
+
+        # If no task_id provided, try to find or create task based on project/task names
         if not data.get("task_id"):
-            # Look for a generic "Misc" task or create one
-            misc_task = db.scalar(
-                select(Task).where(
-                    Task.week_id == week_id,
-                    Task.title == "Misc"
+            target_task = None
+
+            # If both project and task names provided, find/create them
+            if project_name and task_name:
+                # Find or create project
+                project = db.scalar(
+                    select(Project).where(Project.name == project_name)
                 )
-            )
-            if not misc_task:
-                misc_task = Task(
-                    title="Misc",
-                    week_id=week_id,
-                    state="active",
-                    priority=3
+                if not project:
+                    project = Project(name=project_name, is_active=True)
+                    db.add(project)
+                    db.commit()
+                    db.refresh(project)
+
+                # Find or create task
+                target_task = db.scalar(
+                    select(Task).where(
+                        Task.title == task_name,
+                        Task.project_id == project.id,
+                        Task.week_id == week_id
+                    )
                 )
-                db.add(misc_task)
-                db.commit()
-                db.refresh(misc_task)
-            data["task_id"] = misc_task.id
+                if not target_task:
+                    target_task = Task(
+                        title=task_name,
+                        week_id=week_id,
+                        project_id=project.id,
+                        state="active",
+                        priority=1
+                    )
+                    db.add(target_task)
+                    db.commit()
+                    db.refresh(target_task)
+            # If only task name provided
+            elif task_name:
+                target_task = db.scalar(
+                    select(Task).where(
+                        Task.title == task_name,
+                        Task.week_id == week_id
+                    )
+                )
+                if not target_task:
+                    target_task = Task(
+                        title=task_name,
+                        week_id=week_id,
+                        state="active",
+                        priority=1
+                    )
+                    db.add(target_task)
+                    db.commit()
+                    db.refresh(target_task)
+
+            # Fallback to Misc task
+            if not target_task:
+                target_task = db.scalar(
+                    select(Task).where(
+                        Task.week_id == week_id,
+                        Task.title == "Misc"
+                    )
+                )
+                if not target_task:
+                    target_task = Task(
+                        title="Misc",
+                        week_id=week_id,
+                        state="active",
+                        priority=3
+                    )
+                    db.add(target_task)
+                    db.commit()
+                    db.refresh(target_task)
+
+            data["task_id"] = target_task.id
 
         # Create work entry
         work_entry = WorkEntry(**data)

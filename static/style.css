@@ -1269,51 +1269,50 @@ kbd {
 }
 
 /* ========================================
-   Day 12: PM Section Styles
+   Day 12: PM Section Styles (Simplified Text File Look)
    ======================================== */
 
 .pm-section {
     margin-bottom: 40px;
     padding: 20px;
-    background: linear-gradient(to bottom, #f8f9fa 0%, #ffffff 100%);
-    border: 2px solid #dee2e6;
-    border-radius: 8px;
+    background: #fafafa;
+    border: 1px solid #ddd;
+    font-family: 'Courier New', Courier, monospace;
 }
 
 .pm-tree {
-    margin-top: 15px;
+    margin-top: 10px;
 }
 
 .pm-project {
-    margin-bottom: 30px;
-    padding: 15px;
-    background: white;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
+    margin-bottom: 25px;
+    padding: 0;
+    background: transparent;
+    border: none;
 }
 
 .pm-project-header {
-    font-size: 1.3em;
+    font-size: 1.1em;
     font-weight: 700;
-    color: #2c3e50;
-    margin-bottom: 15px;
-    padding: 10px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 4px;
+    color: #000;
+    margin-bottom: 8px;
+    padding: 4px 0;
+    background: transparent;
+    border-bottom: 2px solid #000;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .pm-task, .pm-subtask {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px;
-    margin: 6px 0;
-    background: white;
-    border: 1px solid #e9ecef;
-    border-radius: 4px;
+    gap: 8px;
+    padding: 4px 0;
+    margin: 2px 0;
+    background: transparent;
+    border: none;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.1s;
 }
 
 .pm-task {
@@ -1321,48 +1320,46 @@ kbd {
 }
 
 .pm-subtask {
-    margin-left: 60px;
-    border-left: 3px solid #adb5bd;
+    margin-left: 40px;
 }
 
 .pm-task:hover, .pm-subtask:hover {
-    background: #f8f9fa;
-    border-color: #adb5bd;
+    background: #f0f0f0;
 }
 
 .pm-task.pm-selected, .pm-subtask.pm-selected {
-    background: #e3f2fd;
-    border-color: #2196f3;
-    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+    background: #e8e8e8;
+    border-left: 3px solid #000;
+    padding-left: 5px;
 }
 
 .pm-task-controls {
     display: flex;
-    gap: 4px;
+    gap: 2px;
 }
 
 .pm-btn {
-    width: 28px;
-    height: 28px;
-    border: 1px solid #ced4da;
-    background: white;
-    border-radius: 4px;
+    width: 24px;
+    height: 20px;
+    border: 1px solid #999;
+    background: #fff;
+    border-radius: 2px;
     cursor: pointer;
-    font-size: 0.85em;
+    font-size: 0.75em;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all 0.1s;
 }
 
 .pm-btn:hover {
-    background: #f8f9fa;
-    border-color: #adb5bd;
+    background: #e0e0e0;
+    border-color: #666;
 }
 
 .pm-priority {
-    font-weight: 600;
-    font-size: 0.75em;
+    font-weight: 700;
+    font-size: 0.7em;
 }
 
 .pm-priority:hover {
@@ -1389,35 +1386,36 @@ kbd {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .pm-task-title {
     flex: 1;
+    font-size: 0.95em;
 }
 
 .pm-task-delegate {
-    font-size: 0.85em;
-    color: #6c757d;
-    padding: 2px 8px;
-    background: #e9ecef;
-    border-radius: 12px;
+    font-size: 0.8em;
+    color: #666;
+    padding: 2px 6px;
+    background: #e8e8e8;
+    border: 1px solid #ccc;
 }
 
 .pm-task-state {
     color: #28a745;
-    font-size: 1.2em;
+    font-size: 1em;
 }
 
 .pm-subtasks {
-    margin-top: 8px;
+    margin-top: 0;
 }
 
 /* Empty state in PM section */
 .pm-section .empty-state {
     text-align: center;
-    padding: 30px;
-    color: #6c757d;
+    padding: 20px;
+    color: #666;
     font-style: italic;
 }
 
@@ -1480,4 +1478,94 @@ kbd {
 .task-actions .pm-btn {
     width: 28px;
     height: 28px;
+}
+
+/* ========================================
+   Day 14: @ Autocomplete
+   ======================================== */
+
+.quick-add-input-wrapper {
+    position: relative;
+    flex: 1;
+}
+
+.autocomplete-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #3498db;
+    border-top: none;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.autocomplete-dropdown.hidden {
+    display: none;
+}
+
+.autocomplete-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-family: 'Kalam', cursive;
+    font-size: 1em;
+}
+
+.autocomplete-item:hover {
+    background: #e3f2fd;
+}
+
+.autocomplete-item.selected {
+    background: #2196f3;
+    color: white;
+}
+
+/* ========================================
+   Day 14: Sort Controls
+   ======================================== */
+
+.section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.section-header-row .section-header {
+    margin-bottom: 0;
+}
+
+.sort-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sort-label {
+    font-size: 0.9em;
+    color: #666;
+}
+
+.sort-btn {
+    padding: 4px 12px;
+    border: 1px solid #ccc;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: all 0.2s;
+}
+
+.sort-btn:hover {
+    background: #f0f0f0;
+    border-color: #999;
+}
+
+.sort-btn.active {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
 }
