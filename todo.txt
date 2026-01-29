@@ -1,0 +1,87 @@
+Activities:
+
+Use it for real work
+Track actual time
+Note what feels clunky
+Fix bugs as they appear
+🛠️ Helper Prompts for Common Tasks
+Creating a Pull Request
+I'm ready to create a pull request. Help me:
+1. Review all changes on this branch
+2. Write a comprehensive PR description
+3. Create the PR using gh cli
+4. Show me the PR URL
+
+Debugging Issues
+I'm getting this error: [paste error]
+
+Help me debug it:
+1. Read the relevant files
+2. Identify the issue
+3. Fix it
+4. Test the fix
+5. Commit if it works
+
+Adding Dependencies
+I need to add [package name] to the project. 
+1. Add it to pyproject.toml
+2. Install it
+3. Show me how to import and use it
+4. Commit the changes
+
+Database Migrations
+I changed the models and need to update the database.
+
+Since we're using SQLite for MVP:
+1. Drop and recreate the database
+2. Run seed script
+3. Verify it works
+
+
+What is CRUD?
+CRUD = Create, Read, Update, Delete - the 4 basic operations for managing data.
+
+HTTP Methods (RESTful API):
+
+Create → POST - Add new records
+Read → GET - Retrieve records
+Update → PUT/PATCH - Modify records
+Delete → DELETE - Remove records
+Example with tasks:
+
+POST   /tasks        # Create a new task
+GET    /tasks/123    # Read task #123
+PUT    /tasks/123    # Update task #123
+DELETE /tasks/123    # Delete task #123
+
+
+
+TODO:
+
+p1
+fix project not being tagged to time entry, or not carrying through to weekly summary; show project badge and task badge on time entry, accumulate time in weekly summary at task level
+add ability to edit task names
+
+p2
+provide instructions to complete development of server using 
+
+
+p0
+summarize CRUD endpoints for user documentaion
+add Scratchpad section
+8. Visual improvements (day separators, strikethrough)
+9. Undo/redo
+10. Keyboard navigation refinements
+
+
+
+day 14 useability improvements:
+    add ability to edit project name
+    add ability to delete projects on project page, prompt user that deleting project will delete all associated tasks, on ok delete project and all associated tasks 
+    simplify project & task layout to look more like a text file
+    fix on add task, p3 becomes p0 in project list. should default to p1, all p1-p3 show up in weekly priorities, only p0 does not
+    when type @ in input box, project list should autopopulate, when user types beginning of project name, autoselect, tab to select
+    add ability to sort weekly priorities by p#, project name
+    add ability to tag logged time with project by typing time, @ProjectName, #TaskName, description (eg: 830-11 @ProjectName #TaskName description)\
+
+
