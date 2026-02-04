@@ -1141,7 +1141,7 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
         .where(WorkEntry.week_id == week.id)
         .options(joinedload(WorkEntry.task).joinedload(Task.project))
         .order_by(WorkEntry.date, WorkEntry.start_time)
-    ).all()
+    ).unique().all()
 
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
@@ -1203,7 +1203,7 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
         .where(WorkEntry.week_id == week_id)
         .options(joinedload(WorkEntry.task).joinedload(Task.project))
         .order_by(WorkEntry.date, WorkEntry.start_time)
-    ).all()
+    ).unique().all()
 
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
