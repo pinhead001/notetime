@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from notetime.db import SessionLocal, engine
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
@@ -28,7 +28,7 @@ from notetime.schemas import (
     TaskCreate, TaskUpdate, TaskResponse,
     WorkEntryCreate, WorkEntryUpdate, WorkEntryResponse,
     WeekResponse, WeeklyView,
-    ProjectResponse
+    ProjectResponse, ProjectUpdate
 )
 from notetime.summary import generate_weekly_summary
 from notetime.nl_parser import parse_entry, EntryType
@@ -510,26 +510,84 @@ async def quick_add_entry(
     if parsed["type"] == EntryType.TIME_LOG:
         data = parsed["data"]
 
-        # If no task_id provided, try to find or create a default task
+        # Handle project and task name if provided
+        project_name = data.pop("project_name", None)
+        task_name = data.pop("task_name", None)
+
+        # If no task_id provided, try to find or create task based on project/task names
         if not data.get("task_id"):
-            # Look for a generic "Misc" task or create one
-            misc_task = db.scalar(
-                select(Task).where(
-                    Task.week_id == week_id,
-                    Task.title == "Misc"
+            target_task = None
+
+            # If both project and task names provided, find/create them
+            if project_name and task_name:
+                # Find or create project
+                project = db.scalar(
+                    select(Project).where(Project.name == project_name)
                 )
-            )
-            if not misc_task:
-                misc_task = Task(
-                    title="Misc",
-                    week_id=week_id,
-                    state="active",
-                    priority=3
+                if not project:
+                    project = Project(name=project_name, is_active=True)
+                    db.add(project)
+                    db.commit()
+                    db.refresh(project)
+
+                # Find or create task
+                target_task = db.scalar(
+                    select(Task).where(
+                        Task.title == task_name,
+                        Task.project_id == project.id,
+                        Task.week_id == week_id
+                    )
                 )
-                db.add(misc_task)
-                db.commit()
-                db.refresh(misc_task)
-            data["task_id"] = misc_task.id
+                if not target_task:
+                    target_task = Task(
+                        title=task_name,
+                        week_id=week_id,
+                        project_id=project.id,
+                        state="active",
+                        priority=1
+                    )
+                    db.add(target_task)
+                    db.commit()
+                    db.refresh(target_task)
+            # If only task name provided
+            elif task_name:
+                target_task = db.scalar(
+                    select(Task).where(
+                        Task.title == task_name,
+                        Task.week_id == week_id
+                    )
+                )
+                if not target_task:
+                    target_task = Task(
+                        title=task_name,
+                        week_id=week_id,
+                        state="active",
+                        priority=1
+                    )
+                    db.add(target_task)
+                    db.commit()
+                    db.refresh(target_task)
+
+            # Fallback to Misc task
+            if not target_task:
+                target_task = db.scalar(
+                    select(Task).where(
+                        Task.week_id == week_id,
+                        Task.title == "Misc"
+                    )
+                )
+                if not target_task:
+                    target_task = Task(
+                        title="Misc",
+                        week_id=week_id,
+                        state="active",
+                        priority=3
+                    )
+                    db.add(target_task)
+                    db.commit()
+                    db.refresh(target_task)
+
+            data["task_id"] = target_task.id
 
         # Create work entry
         work_entry = WorkEntry(**data)
@@ -685,11 +743,13 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
         select(Task).where(Task.week_id == week_id)
     ).all()
 
-    # Get all work entries for these tasks
+    # Get all work entries for these tasks (with task and project relationships)
     if tasks:
         task_ids = [task.id for task in tasks]
         work_entries = db.scalars(
-            select(WorkEntry).where(WorkEntry.task_id.in_(task_ids))
+            select(WorkEntry)
+            .where(WorkEntry.task_id.in_(task_ids))
+            .options(joinedload(WorkEntry.task).joinedload(Task.project))
         ).all()
     else:
         work_entries = []
@@ -969,13 +1029,19 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/api/projects/{project_id}", response_model=ProjectResponse)
-def update_project(project_id: int, is_active: bool, db: Session = Depends(get_db)):
+def update_project(
+    project_id: int,
+    project_update: ProjectUpdate = None,
+    is_active: bool = None,
+    db: Session = Depends(get_db)
+):
     """
-    Update a project's status.
+    Update a project's name and/or status.
 
     Args:
         project_id: ID of project to update
-        is_active: New active status
+        project_update: Project update data (for JSON body)
+        is_active: New active status (for query param, legacy support)
 
     Returns:
         Updated project
@@ -990,11 +1056,45 @@ def update_project(project_id: int, is_active: bool, db: Session = Depends(get_d
             detail=f"Project with id {project_id} not found"
         )
 
-    project.is_active = is_active
+    # Handle both JSON body and query param for backwards compatibility
+    if project_update:
+        if project_update.name is not None:
+            project.name = project_update.name
+        if project_update.is_active is not None:
+            project.is_active = project_update.is_active
+    elif is_active is not None:
+        # Legacy query param support
+        project.is_active = is_active
+
     db.commit()
     db.refresh(project)
 
     return project
+
+
+@app.delete("/api/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(project_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a project and all associated tasks (cascade delete).
+
+    Args:
+        project_id: ID of project to delete
+
+    Raises:
+        404: If project not found
+    """
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+
+    # Cascade delete will automatically delete all tasks associated with this project
+    db.delete(project)
+    db.commit()
+
+    return None
 
 
 # ============================================
@@ -1032,8 +1132,8 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     # Get all tasks for PM section (organized by project, sorted by sort_order)
     all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
 
-    # Filter weekly tasks to only P1 tasks
-    p1_tasks = [t for t in weekly_data.tasks if t.priority == 1]
+    # Filter weekly tasks to P1-P3 (exclude P0)
+    priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
 
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
@@ -1065,12 +1165,12 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": p1_tasks,  # Only P1 tasks for weekly section
+        "tasks": priority_tasks,  # P1-P3 tasks for weekly section
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "timeline": timeline,
-        "all_projects": all_projects,  # All projects for PM section
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],  # Convert to dicts for JSON
         "all_tasks": all_tasks  # All tasks for PM section
     })
 
@@ -1086,8 +1186,8 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     # Get all tasks for PM section (organized by project, sorted by sort_order)
     all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
 
-    # Filter weekly tasks to only P1 tasks
-    p1_tasks = [t for t in weekly_data.tasks if t.priority == 1]
+    # Filter weekly tasks to P1-P3 (exclude P0)
+    priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
 
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
@@ -1120,12 +1220,12 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": p1_tasks,  # Only P1 tasks for weekly section
+        "tasks": priority_tasks,  # P1-P3 tasks for weekly section
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "timeline": timeline,
-        "all_projects": all_projects,  # All projects for PM section
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],  # Convert to dicts for JSON
         "all_tasks": all_tasks  # All tasks for PM section
     })
 
@@ -1577,16 +1677,31 @@ async def log_form_cancel():
 
 @app.put("/api/tasks/{task_id}/complete", response_class=HTMLResponse)
 async def complete_task(task_id: int, db: Session = Depends(get_db)):
-    """Mark task as completed (HTMX action)"""
+    """Mark task as completed and set priority to P0"""
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     task.state = TaskState.COMPLETED.value
+    task.priority = 0  # Set to P0 when completed
     db.commit()
 
     # Return updated task HTML
     return HTMLResponse(content=f'<div class="task-item task-completed">✓ {task.title} (Completed)</div>')
+
+
+@app.put("/api/tasks/{task_id}/uncomplete", response_class=HTMLResponse)
+async def uncomplete_task(task_id: int, db: Session = Depends(get_db)):
+    """Mark task as active (uncomplete)"""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task.state = TaskState.ACTIVE.value
+    db.commit()
+
+    # Return updated task HTML
+    return HTMLResponse(content=f'<div class="task-item task-active">{task.title}</div>')
 
 
 @app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)

@@ -49,13 +49,16 @@
         <section class="notebook-quick-add">
             <div class="quick-add-container">
                 <div class="quick-add-icon">✍️</div>
-                <input
-                    type="text"
-                    id="quick-add-input"
-                    class="quick-add-input"
-                    placeholder="Type to add: '9-11 worked on API' or 'P1 deploy feature' or '2h fixed bug'..."
-                    autocomplete="off"
-                    autofocus>
+                <div class="quick-add-input-wrapper">
+                    <input
+                        type="text"
+                        id="quick-add-input"
+                        class="quick-add-input"
+                        placeholder="Type to add: '9-11 worked on API' or 'P1 deploy feature' or '2h fixed bug'..."
+                        autocomplete="off"
+                        autofocus>
+                    <div id="autocomplete-dropdown" class="autocomplete-dropdown hidden"></div>
+                </div>
                 <div class="quick-add-hints">
                     <span class="hint-item">9-11 task</span>
                     <span class="hint-item">2h task</span>
@@ -82,32 +85,29 @@
                         {% for task in project_tasks | sort(attribute='sort_order') %}
                         <div class="pm-task" data-task-id="{{ task.id }}" tabindex="0">
                             <div class="pm-task-controls">
-                                <button class="pm-btn pm-priority"
+                                <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
+                                        class="pm-btn pm-complete {% if task.state == 'completed' %}completed{% endif %}"
+                                        title="{% if task.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
+                                <button class="pm-btn pm-priority priority-{{ task.priority }}"
                                         onclick="cyclePriority({{ task.id }}, {{ task.priority if task.priority is not none else 'null' }}); event.stopPropagation();"
                                         title="Cycle priority">
                                     {% if task.priority == 0 %}P0
                                     {% elif task.priority == 1 %}P1
                                     {% elif task.priority == 2 %}P2
-                                    {% elif task.priority == 3 %}P3
-                                    {% else %}--{% endif %}
+                                    {% else %}P0{% endif %}
                                 </button>
-                                <button class="pm-btn pm-delegate"
-                                        onclick="delegateTask({{ task.id }}); event.stopPropagation();"
-                                        title="Delegate">→</button>
-                                <button class="pm-btn pm-complete"
-                                        onclick="completeTask({{ task.id }}); event.stopPropagation();"
-                                        title="Complete">✓</button>
+                                <button class="pm-btn pm-delegate {% if task.delegate %}delegated{% endif %}"
+                                        onclick="toggleDelegate({{ task.id }}, {% if task.delegate %}'{{ task.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
+                                        title="{% if task.delegate %}Undelegate{% else %}Delegate{% endif %}">→</button>
                                 <button class="pm-btn pm-delete"
                                         onclick="deleteTask({{ task.id }}); event.stopPropagation();"
                                         title="Delete">×</button>
                             </div>
-                            <div class="pm-task-content">
-                                <span class="pm-task-title">{{ task.title }}</span>
+                            <div class="pm-task-content {% if task.state == 'completed' %}completed-text{% endif %}">
+                                <span class="pm-task-title"
+                                      ondblclick="editTaskName({{ task.id }}, '{{ task.title }}'); event.stopPropagation();">{{ task.title }}</span>
                                 {% if task.delegate %}
                                 <span class="pm-task-delegate">→ {{ task.delegate }}</span>
-                                {% endif %}
-                                {% if task.state == 'completed' %}
-                                <span class="pm-task-state">✓</span>
                                 {% endif %}
                             </div>
 
@@ -117,32 +117,29 @@
                                 {% for subtask in subtasks | sort(attribute='sort_order') %}
                                 <div class="pm-subtask" data-task-id="{{ subtask.id }}" tabindex="0">
                                     <div class="pm-task-controls">
-                                        <button class="pm-btn pm-priority"
+                                        <button onclick="toggleComplete({{ subtask.id }}, '{{ subtask.state }}'); event.stopPropagation();"
+                                                class="pm-btn pm-complete {% if subtask.state == 'completed' %}completed{% endif %}"
+                                                title="{% if subtask.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
+                                        <button class="pm-btn pm-priority priority-{{ subtask.priority }}"
                                                 onclick="cyclePriority({{ subtask.id }}, {{ subtask.priority if subtask.priority is not none else 'null' }}); event.stopPropagation();"
                                                 title="Cycle priority">
                                             {% if subtask.priority == 0 %}P0
                                             {% elif subtask.priority == 1 %}P1
                                             {% elif subtask.priority == 2 %}P2
-                                            {% elif subtask.priority == 3 %}P3
-                                            {% else %}--{% endif %}
+                                            {% else %}P0{% endif %}
                                         </button>
-                                        <button class="pm-btn pm-delegate"
-                                                onclick="delegateTask({{ subtask.id }}); event.stopPropagation();"
-                                                title="Delegate">→</button>
-                                        <button class="pm-btn pm-complete"
-                                                onclick="completeTask({{ subtask.id }}); event.stopPropagation();"
-                                                title="Complete">✓</button>
+                                        <button class="pm-btn pm-delegate {% if subtask.delegate %}delegated{% endif %}"
+                                                onclick="toggleDelegate({{ subtask.id }}, {% if subtask.delegate %}'{{ subtask.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
+                                                title="{% if subtask.delegate %}Undelegate{% else %}Delegate{% endif %}">→</button>
                                         <button class="pm-btn pm-delete"
                                                 onclick="deleteTask({{ subtask.id }}); event.stopPropagation();"
                                                 title="Delete">×</button>
                                     </div>
-                                    <div class="pm-task-content">
-                                        <span class="pm-task-title">{{ subtask.title }}</span>
+                                    <div class="pm-task-content {% if subtask.state == 'completed' %}completed-text{% endif %}">
+                                        <span class="pm-task-title"
+                                              ondblclick="editTaskName({{ subtask.id }}, '{{ subtask.title }}'); event.stopPropagation();">{{ subtask.title }}</span>
                                         {% if subtask.delegate %}
                                         <span class="pm-task-delegate">→ {{ subtask.delegate }}</span>
-                                        {% endif %}
-                                        {% if subtask.state == 'completed' %}
-                                        <span class="pm-task-state">✓</span>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -162,10 +159,17 @@
 
         <!-- Weekly Priorities Section -->
         <section class="priorities">
-            <h2 class="section-header collapsible" onclick="toggleSection('priorities')">
-                <span class="toggle-icon">▼</span>
-                📋 Weekly Priorities (P1 only)
-            </h2>
+            <div class="section-header-row">
+                <h2 class="section-header collapsible" onclick="toggleSection('priorities')">
+                    <span class="toggle-icon">▼</span>
+                    📋 Weekly Priorities (P1-P3)
+                </h2>
+                <div class="sort-controls">
+                    <span class="sort-label">Sort by:</span>
+                    <button class="sort-btn active" onclick="sortTasks('priority')">Priority</button>
+                    <button class="sort-btn" onclick="sortTasks('project')">Project</button>
+                </div>
+            </div>
             <div class="section-content" id="priorities-content">
 
             {% if tasks %}
@@ -177,24 +181,26 @@
                      tabindex="0">
                     <!-- Task Actions (HTMX) on the left -->
                     <div class="task-actions">
-                        <button hx-put="/api/tasks/{{ task.id }}/complete"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-icon"
-                                title="Complete">✓</button>
-                        <button hx-put="/api/tasks/{{ task.id }}/defer"
-                                hx-target="#task-{{ task.id }}"
-                                hx-swap="outerHTML"
-                                class="btn-icon"
-                                title="Mark as Waiting">⏸</button>
-                        <button hx-delete="/api/tasks/{{ task.id }}"
-                                hx-confirm="Delete this task?"
-                                class="btn-icon btn-delete"
-                                data-action="delete-task"
-                                title="Delete">🗑</button>
+                        <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
+                                class="pm-btn pm-complete {% if task.state == 'completed' %}completed{% endif %}"
+                                title="{% if task.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
+                        <button class="pm-btn pm-priority priority-{{ task.priority }}"
+                                onclick="cyclePriority({{ task.id }}, {{ task.priority if task.priority is not none else 'null' }}); event.stopPropagation();"
+                                title="Cycle priority">
+                            {% if task.priority == 0 %}P0
+                            {% elif task.priority == 1 %}P1
+                            {% elif task.priority == 2 %}P2
+                            {% else %}P0{% endif %}
+                        </button>
+                        <button class="pm-btn pm-delegate {% if task.delegate %}delegated{% endif %}"
+                                onclick="toggleDelegate({{ task.id }}, {% if task.delegate %}'{{ task.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
+                                title="{% if task.delegate %}Undelegate{% else %}Delegate{% endif %}">→</button>
+                        <button class="pm-btn pm-delete"
+                                onclick="deleteTask({{ task.id }}); event.stopPropagation();"
+                                title="Delete">×</button>
                     </div>
 
-                    <div class="task-content">
+                    <div class="task-content {% if task.state == 'completed' %}completed-text{% endif %}">
                         <span class="task-title" data-editable="true">{{ task.title }}</span>
                         {% if task.delegate %}
                         <span class="task-delegate">
@@ -270,6 +276,14 @@
                             {% else %}
                             <span class="log-note-inline log-note-empty" data-field="note" data-editable="true">(no note)</span>
                             {% endif %}
+                            <div class="log-badges">
+                                {% if entry.task %}
+                                    {% if entry.task.project %}
+                                    <span class="log-project-badge">@{{ entry.task.project.name }}</span>
+                                    {% endif %}
+                                    <span class="log-task-badge">#{{ entry.task.title }}</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                 {% endfor %}
@@ -394,16 +408,14 @@
         // ========================================
 
         async function cyclePriority(taskId, currentPriority) {
-            // Cycle through: null/3 -> 0 -> 1 -> 2 -> 3 -> 0...
+            // Cycle through: P0 -> P1 -> P2 -> P0 (skip P3)
             let newPriority;
-            if (currentPriority === null || currentPriority === 3) {
-                newPriority = 0;
-            } else if (currentPriority === 0) {
+            if (currentPriority === null || currentPriority === 0) {
                 newPriority = 1;
             } else if (currentPriority === 1) {
                 newPriority = 2;
             } else if (currentPriority === 2) {
-                newPriority = 3;
+                newPriority = 0;
             } else {
                 newPriority = 0;
             }
@@ -426,42 +438,72 @@
             }
         }
 
-        async function completeTask(taskId) {
+        async function toggleComplete(taskId, currentState) {
             try {
-                const response = await fetch(`/api/tasks/${taskId}/complete`, {
-                    method: 'PUT'
-                });
-
-                if (response.ok) {
-                    location.reload();
-                } else {
-                    alert('Error completing task');
-                }
-            } catch (err) {
-                console.error(err);
-                alert('Error completing task');
-            }
-        }
-
-        async function delegateTask(taskId) {
-            const delegate = prompt('Delegate to:');
-            if (delegate && delegate.trim()) {
-                try {
-                    const response = await fetch(`/api/tasks/${taskId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ delegate: delegate.trim(), state: 'delegated' })
+                if (currentState === 'completed') {
+                    // Uncomplete the task
+                    const response = await fetch(`/api/tasks/${taskId}/uncomplete`, {
+                        method: 'PUT'
                     });
 
                     if (response.ok) {
                         location.reload();
                     } else {
-                        alert('Error delegating task');
+                        alert('Error uncompleting task');
                     }
-                } catch (err) {
-                    console.error(err);
-                    alert('Error delegating task');
+                } else {
+                    // Complete the task (will set priority to P0 and state to completed)
+                    const response = await fetch(`/api/tasks/${taskId}/complete`, {
+                        method: 'PUT'
+                    });
+
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error completing task');
+                    }
                 }
+            } catch (err) {
+                console.error(err);
+                alert('Error toggling task completion');
+            }
+        }
+
+        async function toggleDelegate(taskId, currentDelegate) {
+            try {
+                if (currentDelegate && currentDelegate !== 'null') {
+                    // Currently delegated - undelegate
+                    const response = await fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ delegate: null, state: 'active' })
+                    });
+
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error undelegating task');
+                    }
+                } else {
+                    // Not delegated - delegate it
+                    const delegate = prompt('Delegate to:');
+                    if (delegate && delegate.trim()) {
+                        const response = await fetch(`/api/tasks/${taskId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ delegate: delegate.trim(), state: 'delegated' })
+                        });
+
+                        if (response.ok) {
+                            location.reload();
+                        } else {
+                            alert('Error delegating task');
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error toggling delegation');
             }
         }
 
@@ -481,6 +523,30 @@
                     console.error(err);
                     alert('Error deleting task');
                 }
+            }
+        }
+
+        async function editTaskName(taskId, currentName) {
+            const newName = prompt('Edit task name:', currentName);
+            if (!newName || newName.trim() === '' || newName === currentName) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: newName.trim() })
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Error updating task name');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error updating task name');
             }
         }
 
@@ -604,22 +670,170 @@
         }
 
         // ========================================
+        // Day 14: Sort Weekly Priorities
+        // ========================================
+
+        function sortTasks(sortBy) {
+            const taskList = document.querySelector('.priorities .task-list');
+            if (!taskList) return;
+
+            const tasks = Array.from(taskList.querySelectorAll('.task-item'));
+
+            // Update active button
+            document.querySelectorAll('.sort-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Sort tasks
+            tasks.sort((a, b) => {
+                if (sortBy === 'priority') {
+                    // Get priority from button text
+                    const aPriority = parseInt(a.querySelector('.pm-priority').textContent.replace('P', ''));
+                    const bPriority = parseInt(b.querySelector('.pm-priority').textContent.replace('P', ''));
+                    return bPriority - aPriority; // Higher priority first (P3, P2, P1)
+                } else if (sortBy === 'project') {
+                    // Get project from project-tag or use empty string
+                    const aProject = a.querySelector('.project-tag')?.textContent || '';
+                    const bProject = b.querySelector('.project-tag')?.textContent || '';
+                    return aProject.localeCompare(bProject);
+                }
+                return 0;
+            });
+
+            // Re-append in sorted order
+            tasks.forEach(task => taskList.appendChild(task));
+        }
+
+        // ========================================
         // Day 11: Notebook Quick-Add
         // ========================================
 
         const quickAddInput = document.getElementById('quick-add-input');
+        const autocompleteDropdown = document.getElementById('autocomplete-dropdown');
         const weekId = {{ week.id }};
+        const allProjects = {{ all_projects | tojson | safe }};
+
+        let selectedAutocompleteIndex = -1;
+        let autocompleteItems = [];
 
         if (quickAddInput) {
-            // Submit on Enter
+            // @ autocomplete for projects
+            quickAddInput.addEventListener('input', function(e) {
+                const value = this.value;
+                const cursorPos = this.selectionStart;
+
+                // Find @ before cursor
+                const textBeforeCursor = value.substring(0, cursorPos);
+                const atMatch = textBeforeCursor.match(/@(\w*)$/);
+
+                if (atMatch) {
+                    // Show autocomplete
+                    const searchTerm = atMatch[1].toLowerCase();
+                    const filtered = allProjects.filter(p =>
+                        p.name.toLowerCase().startsWith(searchTerm) || searchTerm === ''
+                    );
+
+                    if (filtered.length > 0) {
+                        showAutocomplete(filtered, atMatch.index);
+                    } else {
+                        hideAutocomplete();
+                    }
+                } else {
+                    hideAutocomplete();
+                }
+            });
+
+            // Handle keyboard navigation in autocomplete
             quickAddInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && this.value.trim()) {
-                    e.preventDefault();
-                    submitQuickAdd(this.value.trim());
+                if (autocompleteDropdown.classList.contains('hidden')) {
+                    // No autocomplete open
+                    if (e.key === 'Enter' && this.value.trim()) {
+                        e.preventDefault();
+                        submitQuickAdd(this.value.trim());
+                    }
+                } else {
+                    // Autocomplete is open
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        selectedAutocompleteIndex = Math.min(
+                            selectedAutocompleteIndex + 1,
+                            autocompleteItems.length - 1
+                        );
+                        updateAutocompleteSelection();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        selectedAutocompleteIndex = Math.max(selectedAutocompleteIndex - 1, 0);
+                        updateAutocompleteSelection();
+                    } else if (e.key === 'Tab' || e.key === 'Enter') {
+                        e.preventDefault();
+                        if (selectedAutocompleteIndex >= 0) {
+                            selectAutocompleteItem(selectedAutocompleteIndex);
+                        }
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        hideAutocomplete();
+                    }
                 }
             });
 
             // Focus on load
+            quickAddInput.focus();
+        }
+
+        function showAutocomplete(projects, atPosition) {
+            autocompleteItems = projects;
+            selectedAutocompleteIndex = 0;
+
+            autocompleteDropdown.innerHTML = projects.map((p, idx) =>
+                `<div class="autocomplete-item ${idx === 0 ? 'selected' : ''}" data-index="${idx}">
+                    @${p.name}
+                </div>`
+            ).join('');
+
+            // Add click handlers
+            autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    selectAutocompleteItem(parseInt(item.dataset.index));
+                });
+            });
+
+            autocompleteDropdown.classList.remove('hidden');
+        }
+
+        function hideAutocomplete() {
+            autocompleteDropdown.classList.add('hidden');
+            autocompleteItems = [];
+            selectedAutocompleteIndex = -1;
+        }
+
+        function updateAutocompleteSelection() {
+            const items = autocompleteDropdown.querySelectorAll('.autocomplete-item');
+            items.forEach((item, idx) => {
+                if (idx === selectedAutocompleteIndex) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+
+        function selectAutocompleteItem(index) {
+            const project = autocompleteItems[index];
+            const value = quickAddInput.value;
+            const cursorPos = quickAddInput.selectionStart;
+            const textBeforeCursor = value.substring(0, cursorPos);
+            const atMatch = textBeforeCursor.match(/@(\w*)$/);
+
+            if (atMatch) {
+                const beforeAt = value.substring(0, atMatch.index);
+                const afterCursor = value.substring(cursorPos);
+                quickAddInput.value = beforeAt + '@' + project.name + ' ' + afterCursor;
+                quickAddInput.selectionStart = quickAddInput.selectionEnd =
+                    atMatch.index + project.name.length + 2;
+            }
+
+            hideAutocomplete();
             quickAddInput.focus();
         }
 

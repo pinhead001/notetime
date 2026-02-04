@@ -57,7 +57,7 @@ class Task(Base):
     week_id: Mapped[int] = mapped_column(ForeignKey("weeks.id"), nullable=False)
 
     state: Mapped[str] = mapped_column(String, default=TaskState.ACTIVE.value)
-    priority: Mapped[int] = mapped_column(Integer, default=3)
+    priority: Mapped[int] = mapped_column(Integer, default=1)
     project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("projects.id"), nullable=True, default=None)
     delegate: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     parent_task_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tasks.id"), nullable=True, default=None)

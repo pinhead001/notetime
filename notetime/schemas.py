@@ -9,7 +9,7 @@ class TaskCreate(BaseModel):
     title: str
     week_id: int
     state: str = "active"
-    priority: int = 3
+    priority: int = 1
     project_id: Optional[int] = None
     delegate: Optional[str] = None
     parent_task_id: Optional[int] = None
@@ -24,6 +24,15 @@ class TaskUpdate(BaseModel):
     delegate: Optional[str] = None
     parent_task_id: Optional[int] = None
     sort_order: Optional[int] = None
+
+# ------------------------------
+# Project input
+# ------------------------------
+class ProjectUpdate(BaseModel):
+    """Project update schema - all fields optional"""
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
 
 # ------------------------------
 # WorkEntry input
