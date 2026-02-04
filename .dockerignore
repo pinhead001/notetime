@@ -49,6 +49,7 @@ test.db
 # Documentation
 *.md
 !README.md
+!rules.md
 
 # Render config
 render.yaml
