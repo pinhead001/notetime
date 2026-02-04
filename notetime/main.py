@@ -1135,6 +1135,14 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     # Filter weekly tasks to P1-P3 (exclude P0)
     priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
 
+    # Load work entries with task and project relationships for badge display
+    raw_work_entries = db.scalars(
+        select(WorkEntry)
+        .where(WorkEntry.week_id == week.id)
+        .options(joinedload(WorkEntry.task).joinedload(Task.project))
+        .order_by(WorkEntry.date, WorkEntry.start_time)
+    ).all()
+
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
 
@@ -1147,8 +1155,8 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
             "data": task
         })
 
-    # Add work entries
-    for entry in weekly_data.work_entries:
+    # Add work entries (use raw entries with relationships for badge display)
+    for entry in raw_work_entries:
         timeline.append({
             "type": "log",
             "date": entry.date,
@@ -1166,7 +1174,7 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "week": weekly_data.week,
         "tasks": priority_tasks,  # P1-P3 tasks for weekly section
-        "work_entries": weekly_data.work_entries,
+        "work_entries": raw_work_entries,  # Use raw entries with task/project relationships
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "timeline": timeline,
@@ -1189,6 +1197,14 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     # Filter weekly tasks to P1-P3 (exclude P0)
     priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
 
+    # Load work entries with task and project relationships for badge display
+    raw_work_entries = db.scalars(
+        select(WorkEntry)
+        .where(WorkEntry.week_id == week_id)
+        .options(joinedload(WorkEntry.task).joinedload(Task.project))
+        .order_by(WorkEntry.date, WorkEntry.start_time)
+    ).all()
+
     # Create chronological timeline (mix tasks and work entries)
     timeline = []
     today = date.today()
@@ -1202,8 +1218,8 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
             "data": task
         })
 
-    # Add work entries
-    for entry in weekly_data.work_entries:
+    # Add work entries (use raw entries with relationships for badge display)
+    for entry in raw_work_entries:
         timeline.append({
             "type": "log",
             "date": entry.date,
@@ -1221,7 +1237,7 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
         "request": request,
         "week": weekly_data.week,
         "tasks": priority_tasks,  # P1-P3 tasks for weekly section
-        "work_entries": weekly_data.work_entries,
+        "work_entries": raw_work_entries,  # Use raw entries with task/project relationships
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "timeline": timeline,
