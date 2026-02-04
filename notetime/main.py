@@ -1138,7 +1138,8 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
     # Load work entries with task and project relationships for badge display
     raw_work_entries = db.scalars(
         select(WorkEntry)
-        .where(WorkEntry.week_id == week.id)
+        .join(WorkEntry.task)
+        .where(Task.week_id == week.id)
         .options(joinedload(WorkEntry.task).joinedload(Task.project))
         .order_by(WorkEntry.date, WorkEntry.start_time)
     ).unique().all()
@@ -1200,7 +1201,8 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
     # Load work entries with task and project relationships for badge display
     raw_work_entries = db.scalars(
         select(WorkEntry)
-        .where(WorkEntry.week_id == week_id)
+        .join(WorkEntry.task)
+        .where(Task.week_id == week_id)
         .options(joinedload(WorkEntry.task).joinedload(Task.project))
         .order_by(WorkEntry.date, WorkEntry.start_time)
     ).unique().all()
