@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: notetime-db
+    environment:
+      POSTGRES_USER: notetime
+      POSTGRES_PASSWORD: notetime
+      POSTGRES_DB: notetime
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notetime"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Notetime Application
+  web:
+    build: .
+    container_name: notetime-app
+    environment:
+      DATABASE_URL: postgresql://notetime:notetime@db:5432/notetime
+      ENVIRONMENT: production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount code for development (comment out for production)
+      - ./notetime:/app/notetime
+      - ./templates:/app/templates
+      - ./static:/app/static
+    command: uvicorn notetime.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:

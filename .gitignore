@@ -1,4 +1,10 @@
 __pycache__/
 *.pyc
 .env
+.env.local
 notetime.db
+test.db
+*.db
+
+# Docker
+backup.sql

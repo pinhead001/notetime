@@ -1,0 +1,71 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Database files (will be in volumes)
+*.db
+*.sqlite
+*.sqlite3
+notetime.db
+test.db
+
+# Environment variables
+.env
+.env.local
+
+# Documentation
+*.md
+!README.md
+
+# Render config
+render.yaml
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Other
+todo.txt
+scripts/
+tests/
