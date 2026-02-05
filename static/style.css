@@ -1394,6 +1394,16 @@ kbd {
     font-size: 0.95em;
 }
 
+.pm-task-title.editable {
+    cursor: pointer;
+}
+
+.pm-task-title.editable:hover {
+    background: #f0f8ff;
+    padding: 2px 4px;
+    border-radius: 2px;
+}
+
 .pm-task-delegate {
     font-size: 0.8em;
     color: #666;
