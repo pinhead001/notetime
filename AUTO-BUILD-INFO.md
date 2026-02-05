@@ -141,7 +141,7 @@ When images are built by GitHub Actions, build info is **always** automatic:
 build-args: |
   GIT_BRANCH=${{ github.ref_name }}
   GIT_COMMIT=${{ github.sha }}
-  BUILD_DATE=${{ github.event.head_commit.timestamp }}
+  BUILD_DATE=${{ steps.timestamp.outputs.build_date }}
 ```
 
 No configuration needed!
