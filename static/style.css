@@ -121,6 +121,22 @@ h2 {
     opacity: 0.5;
 }
 
+/* Priority-based color coding for task items */
+.priority-item-1 {
+    background-color: #fee;
+    border-left-color: #dc3545 !important;
+}
+
+.priority-item-2 {
+    background-color: #fffbf0;
+    border-left-color: #ffc107 !important;
+}
+
+.priority-item-3 {
+    background-color: #f0fdf4;
+    border-left-color: #28a745 !important;
+}
+
 .task-content {
     display: flex;
     align-items: center;

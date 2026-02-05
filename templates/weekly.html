@@ -175,7 +175,7 @@
             {% if tasks %}
             <div class="task-list">
                 {% for task in tasks %}
-                <div class="task-item task-{{ task.state }}"
+                <div class="task-item task-{{ task.state }} priority-item-{{ task.priority if task.priority is not none else 3 }}"
                      id="task-{{ task.id }}"
                      data-task-id="{{ task.id }}"
                      tabindex="0">
@@ -218,7 +218,6 @@
                                     {% endif %}
                                 {% endfor %}
                             {% endif %}
-                            <span class="priority-badge">P{{ task.priority }}</span>
                             {% if task.state != 'active' %}
                             <span class="state-badge state-{{ task.state }}">{{ task.state }}</span>
                             {% endif %}
@@ -1358,6 +1357,18 @@
             if (!e.altKey && altKeyPressed) {
                 altKeyPressed = false;
                 document.body.classList.remove('text-only-mode');
+
+                // Auto-copy selected text on alt-release
+                const selection = window.getSelection();
+                if (selection && selection.toString().trim()) {
+                    try {
+                        navigator.clipboard.writeText(selection.toString());
+                        // Optional: Show brief feedback
+                        console.log('Copied to clipboard:', selection.toString());
+                    } catch (err) {
+                        console.error('Failed to copy text:', err);
+                    }
+                }
             }
         });
 
