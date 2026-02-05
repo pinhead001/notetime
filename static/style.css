@@ -87,7 +87,7 @@ h2 {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 15px;
+    padding: 6px 12px;
     border-left: 4px solid #3498db;
     background-color: #f8f9fa;
     border-radius: 4px;
@@ -127,12 +127,14 @@ h2 {
     gap: 12px;
     flex: 1;
     flex-wrap: wrap;
+    min-width: 0; /* Allow flex item to shrink below content size */
 }
 
 .task-title {
     font-size: 1em;
     font-weight: 500;
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 150px;
 }
 
 .task-delegate {
@@ -580,6 +582,8 @@ kbd {
 /* Inline Editing */
 .task-title {
     cursor: text;
+    flex: 1;
+    min-width: 200px;
 }
 
 .inline-edit {
@@ -590,6 +594,16 @@ kbd {
     border-radius: 3px;
     outline: none;
     background-color: white;
+    flex: 1;
+    min-width: 200px;
+}
+
+/* Task edit input - make it expand across screen */
+.task-edit-input {
+    width: 100% !important;
+    max-width: 100%;
+    flex: 1;
+    box-sizing: border-box;
 }
 
 /* ========================================
@@ -1434,12 +1448,6 @@ kbd {
    ======================================== */
 
 /* Priority button colors */
-.pm-priority.priority-0 {
-    background-color: #e9ecef;
-    color: #495057;
-    border-color: #adb5bd;
-}
-
 .pm-priority.priority-1 {
     background-color: #dc3545;
     color: white;
@@ -1450,6 +1458,19 @@ kbd {
     background-color: #ffc107;
     color: #212529;
     border-color: #ffc107;
+}
+
+.pm-priority.priority-3 {
+    background-color: #28a745;
+    color: white;
+    border-color: #28a745;
+}
+
+/* P (no priority) - default gray */
+.pm-priority {
+    background-color: #e9ecef;
+    color: #495057;
+    border-color: #adb5bd;
 }
 
 /* Delegate button - purple when delegated */
@@ -1620,4 +1641,40 @@ kbd {
     font-size: 0.8em;
     font-weight: 600;
     white-space: nowrap;
+}
+
+/* ========================================
+   Alt-Click Text-Only Selection Mode
+   ======================================== */
+
+/* When in text-only mode, make badges and buttons unselectable */
+body.text-only-mode button,
+body.text-only-mode .task-meta,
+body.text-only-mode .task-actions,
+body.text-only-mode .pm-task-controls,
+body.text-only-mode .task-actions-inline,
+body.text-only-mode .log-badges,
+body.text-only-mode .priority-badge,
+body.text-only-mode .state-badge,
+body.text-only-mode .project-tag,
+body.text-only-mode .delegate-badge,
+body.text-only-mode .task-delegate,
+body.text-only-mode .pm-task-delegate,
+body.text-only-mode .log-project-badge,
+body.text-only-mode .log-task-badge,
+body.text-only-mode kbd {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* Visual feedback when in text-only mode */
+body.text-only-mode {
+    cursor: text;
+}
+
+body.text-only-mode button,
+body.text-only-mode .badge {
+    opacity: 0.5;
 }

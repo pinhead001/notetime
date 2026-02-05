@@ -88,13 +88,13 @@
                                 <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
                                         class="pm-btn pm-complete {% if task.state == 'completed' %}completed{% endif %}"
                                         title="{% if task.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
-                                <button class="pm-btn pm-priority priority-{{ task.priority }}"
+                                <button class="pm-btn pm-priority priority-{{ task.priority if task.priority is not none else 3 }}"
                                         onclick="cyclePriority({{ task.id }}, {{ task.priority if task.priority is not none else 'null' }}); event.stopPropagation();"
                                         title="Cycle priority">
-                                    {% if task.priority == 0 %}P0
-                                    {% elif task.priority == 1 %}P1
+                                    {% if task.priority == 1 %}P1
                                     {% elif task.priority == 2 %}P2
-                                    {% else %}P0{% endif %}
+                                    {% elif task.priority == 3 %}P3
+                                    {% else %}P{% endif %}
                                 </button>
                                 <button class="pm-btn pm-delegate {% if task.delegate %}delegated{% endif %}"
                                         onclick="toggleDelegate({{ task.id }}, {% if task.delegate %}'{{ task.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
@@ -120,13 +120,13 @@
                                         <button onclick="toggleComplete({{ subtask.id }}, '{{ subtask.state }}'); event.stopPropagation();"
                                                 class="pm-btn pm-complete {% if subtask.state == 'completed' %}completed{% endif %}"
                                                 title="{% if subtask.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
-                                        <button class="pm-btn pm-priority priority-{{ subtask.priority }}"
+                                        <button class="pm-btn pm-priority priority-{{ subtask.priority if subtask.priority is not none else 3 }}"
                                                 onclick="cyclePriority({{ subtask.id }}, {{ subtask.priority if subtask.priority is not none else 'null' }}); event.stopPropagation();"
                                                 title="Cycle priority">
-                                            {% if subtask.priority == 0 %}P0
-                                            {% elif subtask.priority == 1 %}P1
+                                            {% if subtask.priority == 1 %}P1
                                             {% elif subtask.priority == 2 %}P2
-                                            {% else %}P0{% endif %}
+                                            {% elif subtask.priority == 3 %}P3
+                                            {% else %}P{% endif %}
                                         </button>
                                         <button class="pm-btn pm-delegate {% if subtask.delegate %}delegated{% endif %}"
                                                 onclick="toggleDelegate({{ subtask.id }}, {% if subtask.delegate %}'{{ subtask.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
@@ -184,13 +184,13 @@
                         <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
                                 class="pm-btn pm-complete {% if task.state == 'completed' %}completed{% endif %}"
                                 title="{% if task.state == 'completed' %}Uncomplete{% else %}Complete{% endif %}">✓</button>
-                        <button class="pm-btn pm-priority priority-{{ task.priority }}"
+                        <button class="pm-btn pm-priority priority-{{ task.priority if task.priority is not none else 3 }}"
                                 onclick="cyclePriority({{ task.id }}, {{ task.priority if task.priority is not none else 'null' }}); event.stopPropagation();"
                                 title="Cycle priority">
-                            {% if task.priority == 0 %}P0
-                            {% elif task.priority == 1 %}P1
+                            {% if task.priority == 1 %}P1
                             {% elif task.priority == 2 %}P2
-                            {% else %}P0{% endif %}
+                            {% elif task.priority == 3 %}P3
+                            {% else %}P{% endif %}
                         </button>
                         <button class="pm-btn pm-delegate {% if task.delegate %}delegated{% endif %}"
                                 onclick="toggleDelegate({{ task.id }}, {% if task.delegate %}'{{ task.delegate }}'{% else %}null{% endif %}); event.stopPropagation();"
@@ -219,7 +219,9 @@
                                 {% endfor %}
                             {% endif %}
                             <span class="priority-badge">P{{ task.priority }}</span>
+                            {% if task.state != 'active' %}
                             <span class="state-badge state-{{ task.state }}">{{ task.state }}</span>
+                            {% endif %}
                         </span>
                     </div>
                 </div>
@@ -408,16 +410,16 @@
         // ========================================
 
         async function cyclePriority(taskId, currentPriority) {
-            // Cycle through: P0 -> P1 -> P2 -> P0 (skip P3)
+            // Cycle through: P (3) -> P1 -> P2 -> P3
             let newPriority;
-            if (currentPriority === null || currentPriority === 0) {
+            if (currentPriority === null || currentPriority === 3) {
                 newPriority = 1;
             } else if (currentPriority === 1) {
                 newPriority = 2;
             } else if (currentPriority === 2) {
-                newPriority = 0;
+                newPriority = 3;
             } else {
-                newPriority = 0;
+                newPriority = 1;
             }
 
             try {
@@ -1336,6 +1338,35 @@
                 const fieldName = this.dataset.field;
                 enableWorkEntryEdit(this, entryId, fieldName);
             });
+        });
+
+        // ========================================
+        // Alt-Click Text-Only Selection Mode
+        // ========================================
+
+        // Track alt key state for text-only selection mode
+        let altKeyPressed = false;
+
+        document.addEventListener('keydown', function(e) {
+            if (e.altKey && !altKeyPressed) {
+                altKeyPressed = true;
+                document.body.classList.add('text-only-mode');
+            }
+        });
+
+        document.addEventListener('keyup', function(e) {
+            if (!e.altKey && altKeyPressed) {
+                altKeyPressed = false;
+                document.body.classList.remove('text-only-mode');
+            }
+        });
+
+        // Also handle when window loses focus
+        window.addEventListener('blur', function() {
+            if (altKeyPressed) {
+                altKeyPressed = false;
+                document.body.classList.remove('text-only-mode');
+            }
         });
     </script>
 </body>
