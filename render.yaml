@@ -2,6 +2,7 @@ services:
   - type: web
     name: notetime
     env: python
+    branch: main  # Deploy from main branch
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn notetime.main:app --host 0.0.0.0 --port $PORT
     envVars:
