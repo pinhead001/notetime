@@ -19,7 +19,12 @@ services:
 
   # Notetime Application
   web:
-    build: .  # Build locally from Dockerfile
+    build:
+      context: .
+      args:
+        - GIT_BRANCH=${GIT_BRANCH:-local}
+        - GIT_COMMIT=${GIT_COMMIT:-dev}
+        - BUILD_DATE=${BUILD_DATE:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}
     # Or use pre-built image from GitHub Container Registry:
     # image: ghcr.io/pinhead001/notetime:latest
     container_name: notetime-app

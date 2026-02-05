@@ -15,6 +15,7 @@ from typing import List, Optional
 from pathlib import Path
 from io import StringIO
 import csv
+import os
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Form
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -1825,3 +1826,15 @@ def api_root():
 def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get("/version")
+def version_info():
+    """Return build and version information"""
+    return {
+        "version": os.getenv("VERSION", "1.0.0"),
+        "git_branch": os.getenv("GIT_BRANCH", "unknown"),
+        "git_commit": os.getenv("GIT_COMMIT", "unknown"),
+        "build_date": os.getenv("BUILD_DATE", "unknown"),
+        "environment": os.getenv("ENVIRONMENT", "development")
+    }
