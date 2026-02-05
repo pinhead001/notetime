@@ -37,6 +37,14 @@ if %errorlevel% neq 0 (
 echo [OK] Docker is running
 echo.
 
+REM Capture git info for build metadata
+for /f "delims=" %%i in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set GIT_BRANCH=%%i
+for /f "delims=" %%i in ('git rev-parse --short HEAD 2^>nul') do set GIT_COMMIT=%%i
+if not defined GIT_BRANCH set GIT_BRANCH=local
+if not defined GIT_COMMIT set GIT_COMMIT=dev
+echo [INFO] Build info: %GIT_BRANCH% @ %GIT_COMMIT%
+echo.
+
 REM Ask user what they want to do
 echo What would you like to do?
 echo.

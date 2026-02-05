@@ -1,11 +1,19 @@
 .PHONY: help build up down logs test clean restart dev prod
 
+# Capture git info for build metadata
+export GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "local")
+export GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
+export BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
 help: ## Show this help message
 	@echo "Notetime Docker Commands"
+	@echo ""
+	@echo "Build info: $(GIT_BRANCH) @ $(GIT_COMMIT)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build Docker images
+	@echo "Building with: $(GIT_BRANCH) @ $(GIT_COMMIT)"
 	docker-compose build
 
 up: ## Start services in detached mode
