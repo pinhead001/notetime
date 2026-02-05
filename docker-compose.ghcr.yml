@@ -17,11 +17,9 @@ services:
       timeout: 5s
       retries: 5
 
-  # Notetime Application
+  # Notetime Application - using published image
   web:
-    build: .  # Build locally from Dockerfile
-    # Or use pre-built image from GitHub Container Registry:
-    # image: ghcr.io/pinhead001/notetime:latest
+    image: ghcr.io/pinhead001/notetime:latest
     container_name: notetime-app
     environment:
       DATABASE_URL: postgresql://notetime:notetime@db:5432/notetime
@@ -31,12 +29,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      # Mount code for development (comment out for production)
-      - ./notetime:/app/notetime
-      - ./templates:/app/templates
-      - ./static:/app/static
-    command: uvicorn notetime.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   postgres_data:
