@@ -13,22 +13,27 @@ API will be available at:
 from datetime import date, timedelta
 from typing import List, Optional
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Depends, status, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Depends, status, Request, Form, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from notetime.db import SessionLocal, engine
-from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
+from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState, User
 from notetime.schemas import (
     TaskCreate, TaskResponse,
     WorkEntryCreate, WorkEntryResponse,
     WeekResponse, WeeklyView,
-    ProjectResponse
+    ProjectResponse,
+    UserRegister, UserLogin, Token, UserResponse
 )
 from notetime.summary import generate_weekly_summary
+from notetime.auth import (
+    get_password_hash, verify_password, create_access_token,
+    get_current_user, get_db as auth_get_db
+)
 
 
 # Create database tables
@@ -62,6 +67,251 @@ def get_db():
 
 
 # ============================================
+# Authentication Endpoints
+# ============================================
+
+@app.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(user_data: UserRegister, db: Session = Depends(get_db)):
+    """
+    Register a new user.
+
+    Args:
+        user_data: User registration data (email, username, password)
+
+    Returns:
+        Created user details (without password)
+
+    Raises:
+        400: If username or email already exists
+    """
+    # Check if username already exists
+    existing_user = db.scalars(
+        select(User).where(User.username == user_data.username)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )
+
+    # Check if email already exists
+    existing_email = db.scalars(
+        select(User).where(User.email == user_data.email)
+    ).first()
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+
+    # Create new user
+    hashed_password = get_password_hash(user_data.password)
+    db_user = User(
+        email=user_data.email,
+        username=user_data.username,
+        hashed_password=hashed_password,
+        is_active=True
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    return db_user
+
+
+@app.post("/api/auth/login", response_model=Token)
+async def login(user_data: UserLogin, db: Session = Depends(get_db)):
+    """
+    Login and get access token.
+
+    Args:
+        user_data: Login credentials (username, password)
+
+    Returns:
+        Access token
+
+    Raises:
+        401: If credentials are invalid
+    """
+    # Find user by username
+    user = db.scalars(
+        select(User).where(User.username == user_data.username)
+    ).first()
+
+    if not user or not verify_password(user_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
+
+    # Create access token
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    return Token(access_token=access_token, token_type="bearer")
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """
+    Get current user details.
+
+    Returns:
+        Current user details
+
+    Requires:
+        Valid authentication token
+    """
+    return current_user
+
+
+# ============================================
+# Authentication UI Routes
+# ============================================
+
+@app.get("/auth/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Display login page"""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.post("/auth/login", response_class=HTMLResponse)
+async def login_form(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Handle login form submission"""
+    # Find user by username
+    user = db.scalars(
+        select(User).where(User.username == username)
+    ).first()
+
+    if not user or not verify_password(password, user.hashed_password):
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Incorrect username or password"},
+            status_code=401
+        )
+
+    if not user.is_active:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Account is inactive"},
+            status_code=400
+        )
+
+    # Create access token
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    # Redirect to home page with token in cookie
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {access_token}",
+        httponly=True,
+        max_age=60 * 60 * 24 * 7,  # 7 days
+        samesite="lax"
+    )
+    return response
+
+
+@app.get("/auth/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    """Display registration page"""
+    return templates.TemplateResponse("register.html", {"request": request})
+
+
+@app.post("/auth/register", response_class=HTMLResponse)
+async def register_form(
+    request: Request,
+    email: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Handle registration form submission"""
+    # Validate username length
+    if len(username) < 3:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Username must be at least 3 characters"},
+            status_code=400
+        )
+
+    # Validate password length
+    if len(password) < 6:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Password must be at least 6 characters"},
+            status_code=400
+        )
+
+    # Check if username already exists
+    existing_user = db.scalars(
+        select(User).where(User.username == username)
+    ).first()
+    if existing_user:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Username already registered"},
+            status_code=400
+        )
+
+    # Check if email already exists
+    existing_email = db.scalars(
+        select(User).where(User.email == email)
+    ).first()
+    if existing_email:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Email already registered"},
+            status_code=400
+        )
+
+    # Create new user
+    hashed_password = get_password_hash(password)
+    db_user = User(
+        email=email,
+        username=username,
+        hashed_password=hashed_password,
+        is_active=True
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    # Create access token
+    access_token = create_access_token(data={"sub": str(db_user.id)})
+
+    # Redirect to home page with token in cookie
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {access_token}",
+        httponly=True,
+        max_age=60 * 60 * 24 * 7,  # 7 days
+        samesite="lax"
+    )
+    return response
+
+
+@app.get("/auth/logout")
+async def logout():
+    """Logout and clear authentication cookie"""
+    response = RedirectResponse(url="/auth/login", status_code=303)
+    response.delete_cookie(key="access_token")
+    return response
+
+
+# ============================================
 # Task Endpoints
 # ============================================
 
@@ -73,6 +323,7 @@ async def create_task_api(
     priority: int = Form(3),
     project_id: Optional[int] = Form(None),
     delegate: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -90,20 +341,20 @@ async def create_task_api(
         Created task with ID
 
     Raises:
-        404: If week_id or project_id doesn't exist
+        404: If week_id or project_id doesn't exist or doesn't belong to user
     """
-    # Verify week exists
+    # Verify week exists and belongs to user
     week = db.get(Week, week_id)
-    if not week:
+    if not week or week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Week with id {week_id} not found"
         )
 
-    # Verify project exists if provided
+    # Verify project exists and belongs to user if provided
     if project_id is not None and project_id != "":
         project = db.get(Project, project_id)
-        if not project:
+        if not project or project.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Project with id {project_id} not found"
@@ -132,6 +383,7 @@ def update_task(
     state: Optional[str] = None,
     priority: Optional[int] = None,
     delegate: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -148,10 +400,10 @@ def update_task(
         Updated task
 
     Raises:
-        404: If task not found
+        404: If task not found or doesn't belong to user
     """
     db_task = db.get(Task, task_id)
-    if not db_task:
+    if not db_task or db_task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with id {task_id} not found"
@@ -181,7 +433,11 @@ def update_task(
 
 
 @app.get("/tasks/{task_id}", response_model=TaskResponse)
-def get_task(task_id: int, db: Session = Depends(get_db)):
+def get_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Get a specific task by ID.
 
@@ -192,10 +448,10 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
         Task details
 
     Raises:
-        404: If task not found
+        404: If task not found or doesn't belong to user
     """
     db_task = db.get(Task, task_id)
-    if not db_task:
+    if not db_task or db_task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with id {task_id} not found"
@@ -214,6 +470,7 @@ async def create_work_entry_api(
     date: date = Form(...),
     minutes: int = Form(...),
     note: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -229,7 +486,7 @@ async def create_work_entry_api(
         Created work entry with ID
 
     Raises:
-        404: If task_id doesn't exist
+        404: If task_id doesn't exist or doesn't belong to user
         422: If validation fails (e.g., negative minutes)
     """
     # Validate minutes
@@ -239,9 +496,9 @@ async def create_work_entry_api(
             detail="Minutes must be positive"
         )
 
-    # Verify task exists
+    # Verify task exists and belongs to user
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with id {task_id} not found"
@@ -262,7 +519,11 @@ async def create_work_entry_api(
 
 
 @app.get("/work_entries/{entry_id}", response_model=WorkEntryResponse)
-def get_work_entry(entry_id: int, db: Session = Depends(get_db)):
+def get_work_entry(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Get a specific work entry by ID.
 
@@ -273,10 +534,10 @@ def get_work_entry(entry_id: int, db: Session = Depends(get_db)):
         Work entry details
 
     Raises:
-        404: If work entry not found
+        404: If work entry not found or doesn't belong to user
     """
     db_entry = db.get(WorkEntry, entry_id)
-    if not db_entry:
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
@@ -290,7 +551,12 @@ def get_work_entry(entry_id: int, db: Session = Depends(get_db)):
 # ============================================
 
 @app.post("/weeks", response_model=WeekResponse, status_code=status.HTTP_201_CREATED)
-def create_week(start_date: date, note: Optional[str] = None, db: Session = Depends(get_db)):
+def create_week(
+    start_date: date,
+    note: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Create a new week.
 
@@ -302,11 +568,14 @@ def create_week(start_date: date, note: Optional[str] = None, db: Session = Depe
         Created week with ID
 
     Raises:
-        400: If week with this start_date already exists
+        400: If week with this start_date already exists for this user
     """
-    # Check if week already exists
+    # Check if week already exists for this user
     existing = db.scalars(
-        select(Week).where(Week.start_date == start_date)
+        select(Week).where(
+            Week.start_date == start_date,
+            Week.user_id == current_user.id
+        )
     ).first()
 
     if existing:
@@ -316,7 +585,7 @@ def create_week(start_date: date, note: Optional[str] = None, db: Session = Depe
         )
 
     # Create week
-    db_week = Week(start_date=start_date, note=note)
+    db_week = Week(start_date=start_date, note=note, user_id=current_user.id)
     db.add(db_week)
     db.commit()
     db.refresh(db_week)
@@ -325,9 +594,12 @@ def create_week(start_date: date, note: Optional[str] = None, db: Session = Depe
 
 
 @app.get("/weeks/current", response_model=WeeklyView)
-def get_current_week(db: Session = Depends(get_db)):
+def get_current_week(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Get the current week's data.
+    Get the current week's data for the authenticated user.
 
     Finds or creates the week starting on the most recent Monday.
 
@@ -339,24 +611,31 @@ def get_current_week(db: Session = Depends(get_db)):
     days_since_monday = today.weekday()
     week_start = today - timedelta(days=days_since_monday)
 
-    # Find or create week
+    # Find or create week for this user
     week = db.scalars(
-        select(Week).where(Week.start_date == week_start)
+        select(Week).where(
+            Week.start_date == week_start,
+            Week.user_id == current_user.id
+        )
     ).first()
 
     if not week:
         # Create the week if it doesn't exist
-        week = Week(start_date=week_start)
+        week = Week(start_date=week_start, user_id=current_user.id)
         db.add(week)
         db.commit()
         db.refresh(week)
 
     # Return full weekly view
-    return get_week(week.id, db)
+    return get_week(week.id, current_user, db)
 
 
 @app.get("/weeks/{week_id}", response_model=WeeklyView)
-def get_week(week_id: int, db: Session = Depends(get_db)):
+def get_week(
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Get complete weekly view including tasks, work entries, and summary.
 
@@ -367,11 +646,11 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
         WeeklyView with week, tasks, work entries, projects, and summary
 
     Raises:
-        404: If week not found
+        404: If week not found or doesn't belong to user
     """
-    # Get week
+    # Get week and verify ownership
     week = db.get(Week, week_id)
-    if not week:
+    if not week or week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Week with id {week_id} not found"
@@ -391,11 +670,14 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
     else:
         work_entries = []
 
-    # Get all projects referenced by tasks
+    # Get all projects referenced by tasks (only user's projects)
     project_ids = list(set(task.project_id for task in tasks if task.project_id is not None))
     if project_ids:
         projects = db.scalars(
-            select(Project).where(Project.id.in_(project_ids))
+            select(Project).where(
+                Project.id.in_(project_ids),
+                Project.user_id == current_user.id
+            )
         ).all()
     else:
         projects = []
@@ -417,23 +699,31 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
 # ============================================
 
 @app.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-def create_project(name: str, is_active: bool = True, db: Session = Depends(get_db)):
+def create_project(
+    name: str,
+    is_active: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Create a new project.
 
     Args:
-        name: Project name (must be unique)
+        name: Project name (must be unique per user)
         is_active: Whether project is active (default: True)
 
     Returns:
         Created project with ID
 
     Raises:
-        400: If project with this name already exists
+        400: If project with this name already exists for this user
     """
-    # Check if project already exists
+    # Check if project already exists for this user
     existing = db.scalars(
-        select(Project).where(Project.name == name)
+        select(Project).where(
+            Project.name == name,
+            Project.user_id == current_user.id
+        )
     ).first()
 
     if existing:
@@ -443,7 +733,7 @@ def create_project(name: str, is_active: bool = True, db: Session = Depends(get_
         )
 
     # Create project
-    db_project = Project(name=name, is_active=is_active)
+    db_project = Project(name=name, is_active=is_active, user_id=current_user.id)
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
@@ -452,17 +742,21 @@ def create_project(name: str, is_active: bool = True, db: Session = Depends(get_
 
 
 @app.get("/projects", response_model=List[ProjectResponse])
-def list_projects(active_only: bool = True, db: Session = Depends(get_db)):
+def list_projects(
+    active_only: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    List all projects.
+    List all projects for the authenticated user.
 
     Args:
         active_only: If True, only return active projects (default: True)
 
     Returns:
-        List of projects
+        List of projects belonging to the user
     """
-    query = select(Project)
+    query = select(Project).where(Project.user_id == current_user.id)
     if active_only:
         query = query.where(Project.is_active == True)
 
@@ -471,7 +765,11 @@ def list_projects(active_only: bool = True, db: Session = Depends(get_db)):
 
 
 @app.get("/projects/{project_id}", response_model=ProjectResponse)
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Get a specific project by ID.
 
@@ -482,10 +780,10 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
         Project details
 
     Raises:
-        404: If project not found
+        404: If project not found or doesn't belong to user
     """
     project = db.get(Project, project_id)
-    if not project:
+    if not project or project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Project with id {project_id} not found"
@@ -499,29 +797,36 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 # ============================================
 
 @app.get("/", response_class=HTMLResponse)
-async def weekly_view(request: Request, db: Session = Depends(get_db)):
+async def weekly_view(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Serve the weekly HTML page (current week).
 
     This is the main web interface.
     """
-    # Get or create current week
+    # Get or create current week for this user
     today = date.today()
     days_since_monday = today.weekday()
     week_start = today - timedelta(days=days_since_monday)
 
     week = db.scalars(
-        select(Week).where(Week.start_date == week_start)
+        select(Week).where(
+            Week.start_date == week_start,
+            Week.user_id == current_user.id
+        )
     ).first()
 
     if not week:
-        week = Week(start_date=week_start)
+        week = Week(start_date=week_start, user_id=current_user.id)
         db.add(week)
         db.commit()
         db.refresh(week)
 
     # Get weekly data
-    weekly_data = get_week(week.id, db)
+    weekly_data = get_week(week.id, current_user, db)
 
     return templates.TemplateResponse("weekly.html", {
         "request": request,
@@ -529,14 +834,20 @@ async def weekly_view(request: Request, db: Session = Depends(get_db)):
         "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
-        "summary": weekly_data.summary
+        "summary": weekly_data.summary,
+        "user": current_user
     })
 
 
 @app.get("/weeks/{week_id}/page", response_class=HTMLResponse)
-async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depends(get_db)):
+async def weekly_view_by_id(
+    request: Request,
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Serve weekly page for a specific week"""
-    weekly_data = get_week(week_id, db)
+    weekly_data = get_week(week_id, current_user, db)
 
     return templates.TemplateResponse("weekly.html", {
         "request": request,
@@ -544,7 +855,8 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
         "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
-        "summary": weekly_data.summary
+        "summary": weekly_data.summary,
+        "user": current_user
     })
 
 
@@ -553,9 +865,19 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
 # ============================================
 
 @app.get("/partials/task-form", response_class=HTMLResponse)
-async def task_form_partial(request: Request, week_id: int, db: Session = Depends(get_db)):
+async def task_form_partial(
+    request: Request,
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Return task creation form (HTMX partial)"""
-    projects = db.scalars(select(Project).where(Project.is_active == True)).all()
+    projects = db.scalars(
+        select(Project).where(
+            Project.is_active == True,
+            Project.user_id == current_user.id
+        )
+    ).all()
 
     html = f"""
     <form hx-post="/api/tasks" hx-target="#add-task-container">
@@ -585,8 +907,18 @@ async def task_form_cancel():
 
 
 @app.get("/partials/log-form", response_class=HTMLResponse)
-async def log_form_partial(request: Request, week_id: int, db: Session = Depends(get_db)):
+async def log_form_partial(
+    request: Request,
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Return work entry form (HTMX partial)"""
+    # Verify week belongs to user
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Week not found")
+
     tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
 
     html = f"""
@@ -617,10 +949,14 @@ async def log_form_cancel():
 # ============================================
 
 @app.put("/api/tasks/{task_id}/complete", response_class=HTMLResponse)
-async def complete_task(task_id: int, db: Session = Depends(get_db)):
+async def complete_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Mark task as completed (HTMX action)"""
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.week.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Task not found")
 
     task.state = TaskState.COMPLETED.value
@@ -631,12 +967,16 @@ async def complete_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)
-async def defer_task(task_id: int, db: Session = Depends(get_db)):
+async def defer_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Mark task for deferral (HTMX action)"""
     # In a full implementation, this would rollover to next week
     # For now, just mark it visually
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.week.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Task not found")
 
     return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')

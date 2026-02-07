@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 from enum import Enum
-from sqlalchemy import Integer, String, Date, Boolean, ForeignKey
+from sqlalchemy import Integer, String, Date, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from notetime.db import Base
 
@@ -16,15 +16,45 @@ class TaskState(str, Enum):
     CANCELED = "canceled"
 
 # -----------------------------------
+# User
+# -----------------------------------
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, init=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    weeks: Mapped[list["Week"]] = relationship(
+        "Week",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        default_factory=list,
+        init=False
+    )
+    projects: Mapped[list["Project"]] = relationship(
+        "Project",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        default_factory=list,
+        init=False
+    )
+
+# -----------------------------------
 # Week
 # -----------------------------------
 class Week(Base):
     __tablename__ = "weeks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
-    start_date: Mapped[date] = mapped_column(Date, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
+    user: Mapped["User"] = relationship("User", back_populates="weeks", init=False)
     tasks: Mapped[list["Task"]] = relationship(
         "Task",
         back_populates="week",
@@ -40,9 +70,11 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    user: Mapped["User"] = relationship("User", back_populates="projects", init=False)
     tasks: Mapped[list["Task"]] = relationship("Task", back_populates="project", default_factory=list, init=False)
 
 # -----------------------------------

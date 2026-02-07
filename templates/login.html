@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notetime - Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container auth-container">
+        <header class="auth-header">
+            <h1>Notetime</h1>
+            <p>Your weekly task and time-tracking companion</p>
+        </header>
+
+        <section class="auth-form">
+            <h2>Login</h2>
+
+            {% if error %}
+            <div class="error-message">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form method="post" action="/auth/login">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autofocus>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <button type="submit" class="btn-primary">Login</button>
+            </form>
+
+            <p class="auth-link">
+                Don't have an account? <a href="/auth/register">Register here</a>
+            </p>
+        </section>
+    </div>
+</body>
+</html>
