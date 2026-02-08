@@ -8,7 +8,7 @@ from datetime import date
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from notetime.models import Base, Week, Project, Task, TaskState
+from notetime.models import Base, User, Week, Project, Task, TaskState
 from notetime.time_engine import rollover_week
 
 
@@ -24,19 +24,32 @@ def session():
 
 
 @pytest.fixture
-def two_weeks(session):
+def test_user(session):
+    """Create a test user for testing"""
+    user = User(
+        email="test@example.com",
+        username="testuser",
+        hashed_password="hashed_password_here"
+    )
+    session.add(user)
+    session.flush()
+    return user
+
+
+@pytest.fixture
+def two_weeks(session, test_user):
     """Create two consecutive weeks"""
-    week1 = Week(start_date=date(2024, 1, 8))   # Week 1
-    week2 = Week(start_date=date(2024, 1, 15))  # Week 2
+    week1 = Week(start_date=date(2024, 1, 8), user_id=test_user.id)   # Week 1
+    week2 = Week(start_date=date(2024, 1, 15), user_id=test_user.id)  # Week 2
     session.add_all([week1, week2])
     session.flush()
     return {"week1": week1, "week2": week2}
 
 
 @pytest.fixture
-def project(session):
+def project(session, test_user):
     """Create a test project"""
-    proj = Project(name="Test Project")
+    proj = Project(name="Test Project", user_id=test_user.id)
     session.add(proj)
     session.flush()
     return proj

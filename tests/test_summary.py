@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from notetime.models import Base, Week, Project, Task, WorkEntry
+from notetime.models import Base, User, Week, Project, Task, WorkEntry
 from notetime.summary import (
     generate_weekly_summary,
     get_weekly_totals,
@@ -28,19 +28,32 @@ def session():
 
 
 @pytest.fixture
-def sample_week(session):
+def test_user(session):
+    """Create a test user for testing"""
+    user = User(
+        email="test@example.com",
+        username="testuser",
+        hashed_password="hashed_password_here"
+    )
+    session.add(user)
+    session.flush()
+    return user
+
+
+@pytest.fixture
+def sample_week(session, test_user):
     """Create a sample week with projects and tasks"""
-    week = Week(start_date=date(2024, 1, 8))  # Monday
+    week = Week(start_date=date(2024, 1, 8), user_id=test_user.id)  # Monday
     session.add(week)
     session.flush()
     return week
 
 
 @pytest.fixture
-def sample_projects(session):
+def sample_projects(session, test_user):
     """Create sample projects"""
-    project1 = Project(name="Client Work")
-    project2 = Project(name="Internal")
+    project1 = Project(name="Client Work", user_id=test_user.id)
+    project2 = Project(name="Internal", user_id=test_user.id)
     session.add(project1)
     session.add(project2)
     session.flush()

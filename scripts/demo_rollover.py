@@ -19,7 +19,7 @@ sys.path.insert(0, str(parent_dir))
 
 from datetime import date, timedelta
 from notetime.db import SessionLocal, engine
-from notetime.models import Base, Week, Project, Task, TaskState
+from notetime.models import Base, User, Week, Project, Task, TaskState
 from notetime.time_engine import rollover_week
 
 
@@ -32,12 +32,22 @@ def create_demo_data():
 
     session = SessionLocal()
 
+    # Create demo user
+    user = User(
+        email="demo@example.com",
+        username="demouser",
+        hashed_password="$2b$12$placeholder_hashed_password"
+    )
+    session.add(user)
+    session.flush()
+    print(f"Created demo user: {user.username}")
+
     # Create two consecutive weeks
     week1_start = date(2024, 1, 8)  # Monday
     week2_start = week1_start + timedelta(days=7)
 
-    week1 = Week(start_date=week1_start)
-    week2 = Week(start_date=week2_start)
+    week1 = Week(start_date=week1_start, user_id=user.id)
+    week2 = Week(start_date=week2_start, user_id=user.id)
     session.add_all([week1, week2])
     session.flush()
 
@@ -45,8 +55,8 @@ def create_demo_data():
     print(f"Created Week 2: {week2_start}\n")
 
     # Create projects
-    client_project = Project(name="Client Work")
-    internal_project = Project(name="Internal")
+    client_project = Project(name="Client Work", user_id=user.id)
+    internal_project = Project(name="Internal", user_id=user.id)
     session.add_all([client_project, internal_project])
     session.flush()
 
