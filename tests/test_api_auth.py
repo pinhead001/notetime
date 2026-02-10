@@ -15,7 +15,13 @@ from notetime.db import get_db
 @pytest.fixture
 def test_db():
     """Create in-memory test database"""
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    # Use file:memdb?mode=memory&cache=shared for a shared in-memory database
+    # This allows multiple connections to share the same in-memory database
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=__import__('sqlalchemy.pool', fromlist=['StaticPool']).StaticPool
+    )
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

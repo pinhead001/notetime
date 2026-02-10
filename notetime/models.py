@@ -25,7 +25,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, init=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, insert_default=datetime.utcnow, init=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     weeks: Mapped[list["Week"]] = relationship(
