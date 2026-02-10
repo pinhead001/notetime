@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import os
 from datetime import datetime, timedelta
@@ -10,7 +11,7 @@ from passlib.context import CryptContext
 from pydantic_settings import BaseSettings
 from sqlalchemy.orm import Session
 
-from notetime.db import SessionLocal
+from notetime.db import SessionLocal, get_db
 from notetime.models import User
 
 
@@ -39,7 +40,9 @@ security = HTTPBearer()
 
 def _hash_password_input(password: str) -> str:
     """First-pass SHA256 hash to handle passwords > 72 bytes, preserving full entropy"""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    # Get binary digest (32 bytes) and encode as base64 (~44 characters, well under 72 byte limit)
+    binary_digest = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(binary_digest).decode('ascii')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -76,15 +79,6 @@ def decode_access_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
-
-
-def get_db():
-    """Database dependency"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def get_current_user(

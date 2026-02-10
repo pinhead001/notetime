@@ -15,29 +15,30 @@ from typing import List, Optional
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Form, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from notetime.db import SessionLocal, engine
+from notetime.db import SessionLocal, engine, get_db
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState, User
 from notetime.schemas import (
     TaskCreate, TaskResponse,
     WorkEntryCreate, WorkEntryResponse,
-    WeekResponse, WeeklyView,
-    ProjectResponse,
+    WeekCreate, WeekResponse, WeeklyView,
+    ProjectCreate, ProjectResponse,
     UserRegister, UserLogin, Token, UserResponse
 )
 from notetime.summary import generate_weekly_summary
 from notetime.auth import (
     get_password_hash, verify_password, create_access_token,
-    get_current_user, get_db as auth_get_db
+    get_current_user
 )
 
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (commented out for testing - tables should be created via migrations or seed scripts)
+# Base.metadata.create_all(bind=engine)
 
 
 # Initialize FastAPI app
@@ -54,16 +55,6 @@ app = FastAPI(
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-
-
-# Dependency to get database session
-def get_db():
-    """Get database session for dependency injection"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ============================================
@@ -120,12 +111,12 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login", response_model=Token)
-async def login(user_data: UserLogin, db: Session = Depends(get_db)):
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
     Login and get access token.
 
     Args:
-        user_data: Login credentials (username, password)
+        form_data: OAuth2 form with username (or email) and password
 
     Returns:
         Access token
@@ -133,12 +124,14 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
     Raises:
         401: If credentials are invalid
     """
-    # Find user by username
+    # Find user by username or email
     user = db.scalars(
-        select(User).where(User.username == user_data.username)
+        select(User).where(
+            (User.username == form_data.username) | (User.email == form_data.username)
+        )
     ).first()
 
-    if not user or not verify_password(user_data.password, user.hashed_password):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -309,6 +302,144 @@ async def logout():
     response = RedirectResponse(url="/auth/login", status_code=303)
     response.delete_cookie(key="access_token")
     return response
+
+
+# ============================================
+# Week API Endpoints
+# ============================================
+
+@app.post("/api/weeks", response_model=WeekResponse, status_code=status.HTTP_201_CREATED)
+async def create_week_api(
+    week_data: WeekCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new week (API endpoint with JSON body).
+
+    Args:
+        week_data: Week creation data (start_date, note)
+
+    Returns:
+        Created week with ID
+
+    Raises:
+        400: If week with this start_date already exists for this user
+    """
+    # Check if week already exists for this user
+    existing = db.scalars(
+        select(Week).where(
+            Week.start_date == week_data.start_date,
+            Week.user_id == current_user.id
+        )
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Week starting {week_data.start_date} already exists"
+        )
+
+    # Create week
+    db_week = Week(
+        start_date=week_data.start_date,
+        note=week_data.note,
+        user_id=current_user.id
+    )
+    db.add(db_week)
+    db.commit()
+    db.refresh(db_week)
+
+    return db_week
+
+
+@app.get("/api/weeks", response_model=List[WeekResponse])
+async def list_weeks_api(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all weeks for the authenticated user (API endpoint).
+
+    Returns:
+        List of weeks belonging to the user
+    """
+    weeks = db.scalars(
+        select(Week).where(Week.user_id == current_user.id).order_by(Week.start_date.desc())
+    ).all()
+    return weeks
+
+
+# ============================================
+# Project API Endpoints
+# ============================================
+
+@app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project_api(
+    project_data: ProjectCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new project (API endpoint with JSON body).
+
+    Args:
+        project_data: Project creation data (name, is_active)
+
+    Returns:
+        Created project with ID
+
+    Raises:
+        400: If project with this name already exists for this user
+    """
+    # Check if project already exists for this user
+    existing = db.scalars(
+        select(Project).where(
+            Project.name == project_data.name,
+            Project.user_id == current_user.id
+        )
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Project '{project_data.name}' already exists"
+        )
+
+    # Create project
+    db_project = Project(
+        name=project_data.name,
+        is_active=project_data.is_active,
+        user_id=current_user.id
+    )
+    db.add(db_project)
+    db.commit()
+    db.refresh(db_project)
+
+    return db_project
+
+
+@app.get("/api/projects", response_model=List[ProjectResponse])
+async def list_projects_api(
+    active_only: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all projects for the authenticated user (API endpoint).
+
+    Args:
+        active_only: If True, only return active projects (default: True)
+
+    Returns:
+        List of projects belonging to the user
+    """
+    query = select(Project).where(Project.user_id == current_user.id)
+    if active_only:
+        query = query.where(Project.is_active == True)
+
+    projects = db.scalars(query).all()
+    return projects
 
 
 # ============================================

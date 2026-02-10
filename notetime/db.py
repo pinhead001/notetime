@@ -39,3 +39,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Base class for ORM models
 class Base(MappedAsDataclass, DeclarativeBase):
     pass
+
+
+# Database dependency for FastAPI
+def get_db():
+    """Get database session for dependency injection"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

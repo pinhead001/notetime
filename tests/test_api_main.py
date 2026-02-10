@@ -10,15 +10,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from notetime.main import app
 from notetime.models import Base
-from notetime.auth import get_db
+from notetime.db import get_db
 
 
 @pytest.fixture
 def test_db():
     """Create in-memory test database"""
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     def override_get_db():
         db = SessionLocal()

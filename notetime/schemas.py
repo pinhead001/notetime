@@ -66,6 +66,22 @@ class UserResponse(BaseModel):
 # ========================================
 
 # ------------------------------
+# Week input
+# ------------------------------
+class WeekCreate(BaseModel):
+    start_date: date
+    note: Optional[str] = None
+
+
+# ------------------------------
+# Project input
+# ------------------------------
+class ProjectCreate(BaseModel):
+    name: str
+    is_active: bool = True
+
+
+# ------------------------------
 # Task input
 # ------------------------------
 class TaskCreate(BaseModel):
