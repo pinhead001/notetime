@@ -1,15 +1,18 @@
+import hashlib
+import os
 from datetime import datetime, timedelta
 from typing import Optional
+
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Optional as OptionalType
+from pydantic_settings import BaseSettings
 from sqlalchemy.orm import Session
+
 from notetime.db import SessionLocal
 from notetime.models import User
-from pydantic_settings import BaseSettings
-import os
+
 
 # Configuration
 class Settings(BaseSettings):
@@ -20,6 +23,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
 
 settings = Settings()
 SECRET_KEY = settings.secret_key
@@ -33,14 +37,24 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 
+def _hash_password_input(password: str) -> str:
+    """First-pass SHA256 hash to handle passwords > 72 bytes, preserving full entropy"""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    # Hash the input via SHA256, then verify against bcrypt hash
+    sha256_hash = _hash_password_input(plain_password)
+    return pwd_context.verify(sha256_hash, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password"""
-    return pwd_context.hash(password)
+    """Hash a password using SHA256 first-pass, then bcrypt"""
+    # First pass: SHA256 (handles any length, produces 64-char hex string)
+    sha256_hash = _hash_password_input(password)
+    # Second pass: bcrypt (now safely under 72 bytes)
+    return pwd_context.hash(sha256_hash)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -76,7 +90,9 @@ def get_db():
 def get_current_user(
     request: Request,
     db: Session = Depends(get_db),
-    credentials: OptionalType[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(
+        HTTPBearer(auto_error=False)
+    ),
 ) -> User:
     """Get the current authenticated user from JWT token (cookie or header)"""
     credentials_exception = HTTPException(
@@ -100,19 +116,21 @@ def get_current_user(
     if not token:
         # Redirect to login page for web UI requests
         from fastapi.responses import RedirectResponse
+
         if request.url.path.startswith("/api/"):
             raise credentials_exception
         else:
             raise HTTPException(
                 status_code=status.HTTP_303_SEE_OTHER,
                 detail="Not authenticated",
-                headers={"Location": "/auth/login"}
+                headers={"Location": "/auth/login"},
             )
 
     payload = decode_access_token(token)
 
     if payload is None:
         from fastapi.responses import RedirectResponse
+
         if request.url.path.startswith("/api/"):
             raise credentials_exception
         else:
@@ -122,7 +140,7 @@ def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_303_SEE_OTHER,
                 detail="Invalid token",
-                headers={"Location": "/auth/login"}
+                headers={"Location": "/auth/login"},
             )
 
     user_id: int = payload.get("sub")

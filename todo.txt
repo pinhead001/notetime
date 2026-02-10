@@ -1,0 +1,142 @@
+
+TODO:
+
+p1
+test multi-user locally
+test multi-user in render
+
+p2
+complete development of server GCP
+
+p0
+summarize CRUD endpoints for user documentaion
+add Scratchpad section
+8. Visual improvements (day separators, strikethrough)
+9. Undo/redo
+10. Keyboard navigation refinements
+
+
+#######################
+GCP instructions
+
+how to run sqllite db app with htmx frontend on Google Cloud (GCP) free "e2-micro" instance
+
+Because SQLite requires a persistent filesystem, a VM (Compute Engine) is actually better suited for it than serverless options like Cloud Run. 
+Here is the step-by-step guide to running your SQLite + HTMX app on the e2-micro instance while staying strictly within the "Always Free" limits. 
+
+1. Infrastructure Setup (The "Trap" Avoidance)
+GCP defaults often select paid options. You must explicitly configure these settings to ensure $0 cost.
+Create Instance: Go to Compute Engine > VM Instances and click Create Instance.
+Region: You MUST select one of: us-west1 (Oregon), us-central1 (Iowa), or us-east1 (S. Carolina).
+Machine Type: Select E2 series -> e2-micro (2 vCPU, 1 GB RAM).
+Boot Disk (CRITICAL):
+Click "Change".
+Type: Select Standard persistent disk (The default "Balanced" disk is NOT free).
+Size: Up to 30 GB is free.
+Firewall: Check "Allow HTTP traffic" and "Allow HTTPS traffic". 
+
+2. System Configuration (Surviving with 1GB RAM)
+The e2-micro only has 1GB of RAM. If your app and database spike usage, the OS will kill the process. You must enable a swap file immediately after logging in via SSH. 
+bash
+    # 1. Create a 1GB swap file (acts as "emergency RAM" on the disk)
+    sudo fallocate -l 1G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+
+    # 2. Make it permanent across reboots
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+    # 3. Adjust "swappiness" (tell OS to use swap less aggressively)
+    sudo sysctl vm.swappiness=10
+    Use code with caution.
+
+3. SQLite & App Deployment 
+Since SQLite is just a file, it will live on your 30GB persistent disk. This gives you native read/write speeds without network latency. 
+Transfer Code: Use git clone to pull your repo directly onto the VM.
+Database Mode: For a web app with concurrent users, you must enable Write-Ahead Logging (WAL) to prevent "database locked" errors.
+sql
+PRAGMA journal_mode=WAL;
+Use code with caution.
+
+Run this once when you initialize your database connection.
+Run the App: Use a systemd service (Linux background task) to keep your app running. Do not just run it in the terminal. 
+
+4. Production Web Server (Nginx + SSL)
+Don't expose your app port (e.g., :3000 or :8000) directly. Use Nginx as a reverse proxy.
+Install Nginx: sudo apt install nginx
+Config: Point Nginx to your app's localhost port.
+SSL (HTTPS): Use Certbot for a free Let's Encrypt certificate.
+bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx
+Use code with caution.
+
+This gives you automatic HTTPS renewal for free. 
+Summary of "Always Free" Limits
+Component 	Free Limit	Constraints
+Compute	1 e2-micro instance	Must be in us-west1, us-central1, or us-east1.
+Disk	30 GB Storage	Standard Persistent Disk only (HDD).
+Network	1 GB Egress / month	Traffic out to the internet. Inbound is free.
+IP Address	1 External IP	Free only while attached to a running VM.
+Risk Warning: If you stop the instance but keep the static IP reserved, Google will charge you for the "unused static IP." If you destroy the VM, ensure you also release the static IP.
+
+
+
+############
+Use it for real work
+Track actual time
+Note what feels clunky
+Fix bugs as they appear
+🛠️ Helper Prompts for Common Tasks
+Creating a Pull Request
+I'm ready to create a pull request. Help me:
+1. Review all changes on this branch
+2. Write a comprehensive PR description
+3. Create the PR using gh cli
+4. Show me the PR URL
+
+###############
+Debugging Issues
+I'm getting this error: [paste error]
+
+Help me debug it:
+1. Read the relevant files
+2. Identify the issue
+3. Fix it
+4. Test the fix
+5. Commit if it works
+
+Adding Dependencies
+I need to add [package name] to the project. 
+1. Add it to pyproject.toml
+2. Install it
+3. Show me how to import and use it
+4. Commit the changes
+
+Database Migrations
+I changed the models and need to update the database.
+
+Since we're using SQLite for MVP:
+1. Drop and recreate the database
+2. Run seed script
+3. Verify it works
+
+#################
+What is CRUD?
+CRUD = Create, Read, Update, Delete - the 4 basic operations for managing data.
+
+HTTP Methods (RESTful API):
+
+Create → POST - Add new records
+Read → GET - Retrieve records
+Update → PUT/PATCH - Modify records
+Delete → DELETE - Remove records
+Example with tasks:
+
+POST   /tasks        # Create a new task
+GET    /tasks/123    # Read task #123
+PUT    /tasks/123    # Update task #123
+DELETE /tasks/123    # Delete task #123
+
+
