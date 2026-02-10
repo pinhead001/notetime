@@ -1,9 +1,12 @@
 from datetime import date, timedelta
 from sqlalchemy import select
-from notetime.db import SessionLocal
-from notetime.models import User, Week, Project, Task
+from notetime.db import SessionLocal, engine
+from notetime.models import User, Week, Project, Task, Base
 
 def seed():
+    # Create all tables if they don't exist
+    Base.metadata.create_all(engine)
+
     session = SessionLocal()
 
     # Create or get a test user
