@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: notetime-db
+    environment:
+      POSTGRES_USER: notetime
+      POSTGRES_PASSWORD: notetime_dev_password
+      POSTGRES_DB: notetime
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notetime"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Web Application
+  web:
+    build: .
+    container_name: notetime-web
+    environment:
+      # Database connection
+      DATABASE_URL: postgresql://notetime:notetime_dev_password@db:5432/notetime
+      # JWT settings
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for hot reload during development
+      - .:/app
+      # Don't override the installed packages
+      - /app/__pycache__
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn notetime.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
