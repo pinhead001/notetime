@@ -17,7 +17,23 @@ A notebook-style weekly task and time-tracking app.
 
 ## How to run
 
-### Setup
+### Option 1: Docker (Recommended for Local Development)
+
+The easiest way to run Notetime locally with PostgreSQL:
+
+```bash
+# Start all services (web app + database)
+docker-compose up -d
+
+# Initialize database with sample data
+docker-compose exec web python -m notetime.seed
+```
+
+Then open your browser to: http://localhost:8000
+
+See [DOCKER.md](DOCKER.md) for complete Docker documentation.
+
+### Option 2: Local Python Setup
 
 1. Install dependencies:
 ```bash
