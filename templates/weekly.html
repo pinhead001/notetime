@@ -25,6 +25,9 @@
             {% endif %}
             <div class="keyboard-hints">
                 <strong>Shortcuts:</strong>
+                <button class="shortcut-btn" onclick="document.getElementById('quick-add-input').focus()" title="Press '/' to focus quick-add">
+                    <kbd>/</kbd> Quick-add
+                </button>
                 <button class="shortcut-btn" onclick="triggerNewTask()" title="Press 'n' for New task">
                     <kbd>n</kbd> New task
                 </button>
@@ -42,6 +45,9 @@
                 </button>
                 <button class="shortcut-btn" onclick="triggerWaiting()" title="Press 'f' to mark selected task as Waiting">
                     <kbd>f</kbd> Waiting
+                </button>
+                <button class="shortcut-btn" title="Press ↑↓ to navigate tasks, Enter to edit, Esc to deselect">
+                    <kbd>↑↓</kbd> Navigate
                 </button>
                 <button class="shortcut-btn" onclick="window.location.href='/api/weeks/{{ week.id }}/export'" title="Export this week's data to CSV">
                     <kbd>📊</kbd> Export CSV
@@ -1097,6 +1103,48 @@
                 }
             }
 
+            // / = Focus quick-add input
+            if (key === '/') {
+                e.preventDefault();
+                const quickAdd = document.getElementById('quick-add-input');
+                if (quickAdd) quickAdd.focus();
+                return;
+            }
+
+            // Escape = Deselect current task / clear focus
+            if (e.key === 'Escape') {
+                if (selectedTask) {
+                    selectedTask.classList.remove('selected');
+                    selectedTask.blur();
+                    selectedTask = null;
+                }
+                return;
+            }
+
+            // ArrowDown = Move focus to next task in priority list
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const tasks = Array.from(document.querySelectorAll('.task-item'));
+                if (tasks.length === 0) return;
+                const idx = selectedTask ? tasks.indexOf(selectedTask) : -1;
+                const next = tasks[Math.min(idx + 1, tasks.length - 1)];
+                next.click();
+                next.scrollIntoView({block: 'nearest'});
+                return;
+            }
+
+            // ArrowUp = Move focus to previous task in priority list
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const tasks = Array.from(document.querySelectorAll('.task-item'));
+                if (tasks.length === 0) return;
+                const idx = selectedTask ? tasks.indexOf(selectedTask) : tasks.length;
+                const prev = tasks[Math.max(idx - 1, 0)];
+                prev.click();
+                prev.scrollIntoView({block: 'nearest'});
+                return;
+            }
+
             // n = New task
             if (key === 'n') {
                 e.preventDefault();
@@ -1117,6 +1165,17 @@
 
             // Shortcuts requiring a selected task
             if (!selectedTask) return;
+
+            // Enter = Inline-edit selected task title
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const titleEl = selectedTask.querySelector('[data-editable="true"]');
+                if (titleEl) {
+                    const taskId = selectedTask.dataset.taskId;
+                    enableInlineEdit(titleEl, taskId);
+                }
+                return;
+            }
 
             // x = Complete task
             if (key === 'x') {

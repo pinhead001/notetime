@@ -94,6 +94,14 @@ h2 {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+.task-item.selected,
+.task-item:focus {
+    outline: 2px solid #3498db;
+    outline-offset: 1px;
+    background-color: #ebf5fb;
+    box-shadow: 0 2px 6px rgba(52,152,219,0.2);
+}
+
 .task-active {
     border-left-color: #3498db;
 }
