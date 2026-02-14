@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notetime - Beta Feedback</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Notetime <span class="beta-badge">BETA</span></h1>
+            <p class="week-label">Help us improve — share your experience</p>
+        </header>
+
+        {% if success %}
+        <div class="success-message">
+            <strong>Thank you for your feedback!</strong> Your submission has been recorded and will help us improve Notetime.
+            <a href="/">Return to app</a>
+        </div>
+        {% else %}
+
+        {% if error %}
+        <div class="error-message">{{ error }}</div>
+        {% endif %}
+
+        <section class="feedback-section">
+            <h2>Beta Feedback Form</h2>
+            <p class="feedback-intro">
+                As a beta tester, your input is invaluable. Please be as specific as possible — especially for bugs.
+            </p>
+
+            <form method="post" action="/feedback" class="feedback-form">
+
+                <!-- Category -->
+                <div class="form-group">
+                    <label for="category">Feedback Type <span class="required">*</span></label>
+                    <select id="category" name="category" required onchange="toggleConditionalFields(this.value)">
+                        <option value="" disabled selected>Select a category…</option>
+                        <option value="bug_report">🐛 Bug Report</option>
+                        <option value="feature_request">💡 Feature Request</option>
+                        <option value="ui_ux">🎨 UI / UX</option>
+                        <option value="performance">⚡ Performance</option>
+                        <option value="general">💬 General Feedback</option>
+                    </select>
+                </div>
+
+                <!-- Title -->
+                <div class="form-group">
+                    <label for="title">Title <span class="required">*</span></label>
+                    <input
+                        type="text"
+                        id="title"
+                        name="title"
+                        required
+                        maxlength="200"
+                        placeholder="Brief summary (e.g. 'Task completion button unresponsive on mobile')"
+                        value="{{ prefill.title if prefill else '' }}"
+                    >
+                    <span class="field-hint">Max 200 characters</span>
+                </div>
+
+                <!-- Description -->
+                <div class="form-group">
+                    <label for="description">Description <span class="required">*</span></label>
+                    <textarea
+                        id="description"
+                        name="description"
+                        required
+                        rows="5"
+                        placeholder="Describe the issue or idea in detail. For bugs: what did you do, what did you expect, what happened instead?"
+                    >{{ prefill.description if prefill else '' }}</textarea>
+                </div>
+
+                <!-- Bug-specific fields (shown when category = bug_report) -->
+                <div id="bug-fields" class="conditional-fields" style="display:none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="severity">Severity</label>
+                            <select id="severity" name="severity">
+                                <option value="">— select —</option>
+                                <option value="critical">Critical — app unusable</option>
+                                <option value="high">High — major feature broken</option>
+                                <option value="medium">Medium — workaround exists</option>
+                                <option value="low">Low — minor / cosmetic</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="reproducibility">How often does it occur?</label>
+                            <select id="reproducibility" name="reproducibility">
+                                <option value="">— select —</option>
+                                <option value="always">Always (100%)</option>
+                                <option value="sometimes">Sometimes (50%)</option>
+                                <option value="rarely">Rarely (&lt;25%)</option>
+                                <option value="na">N/A</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="browser_info">Browser &amp; OS</label>
+                        <input
+                            type="text"
+                            id="browser_info"
+                            name="browser_info"
+                            placeholder="e.g. Chrome 121 on macOS 14"
+                        >
+                        <span class="field-hint">Helps us reproduce the issue</span>
+                    </div>
+                </div>
+
+                <!-- Overall Rating -->
+                <div class="form-group rating-group">
+                    <label>Overall experience so far</label>
+                    <div class="star-rating" role="group" aria-label="Rate your experience 1 to 5">
+                        {% for i in range(1, 6) %}
+                        <label class="star-label" for="star{{ i }}" title="{{ i }} star{{ 's' if i > 1 else '' }}">
+                            <input type="radio" id="star{{ i }}" name="rating" value="{{ i }}">
+                            <span class="star">&#9733;</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="rating-labels">
+                        <span>Poor</span>
+                        <span>Excellent</span>
+                    </div>
+                </div>
+
+                <!-- Contact email -->
+                <div class="form-group">
+                    <label for="contact_email">Contact email <span class="optional">(optional)</span></label>
+                    <input
+                        type="email"
+                        id="contact_email"
+                        name="contact_email"
+                        placeholder="If you'd like a follow-up"
+                        value="{{ current_user.email if current_user else '' }}"
+                    >
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Submit Feedback</button>
+                    <a href="/" class="btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </section>
+
+        {% endif %}
+
+        <footer class="feedback-footer">
+            <p>Notetime Beta &mdash; <a href="/">Back to app</a></p>
+        </footer>
+    </div>
+
+    <script>
+        function toggleConditionalFields(category) {
+            var bugFields = document.getElementById('bug-fields');
+            bugFields.style.display = (category === 'bug_report') ? 'block' : 'none';
+        }
+
+        // Auto-populate browser info for bug reports
+        document.getElementById('category').addEventListener('change', function() {
+            if (this.value === 'bug_report') {
+                var browserField = document.getElementById('browser_info');
+                if (!browserField.value) {
+                    browserField.value = navigator.userAgent;
+                }
+            }
+        });
+
+        // Restore category selection if form was submitted with errors
+        (function() {
+            var params = new URLSearchParams(window.location.search);
+            var cat = params.get('category');
+            if (cat) {
+                var sel = document.getElementById('category');
+                sel.value = cat;
+                toggleConditionalFields(cat);
+            }
+        })();
+    </script>
+</body>
+</html>

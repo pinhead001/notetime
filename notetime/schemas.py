@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, field_validator, ConfigDict, EmailStr
 
 # ========================================
@@ -184,3 +184,63 @@ class WeeklyView(BaseModel):
     tasks: List[TaskResponse]
     work_entries: List[WorkEntryResponse]
     summary: dict  # Output from time_engine.summarize_by_project
+
+
+# ========================================
+# Feedback Schemas
+# ========================================
+
+FeedbackCategory = Literal["bug_report", "feature_request", "general", "ui_ux", "performance"]
+FeedbackSeverity = Literal["critical", "high", "medium", "low"]
+FeedbackReproducibility = Literal["always", "sometimes", "rarely", "na"]
+
+
+class FeedbackCreate(BaseModel):
+    category: FeedbackCategory
+    title: str
+    description: str
+    rating: Optional[int] = None
+    contact_email: Optional[str] = None
+    browser_info: Optional[str] = None
+    reproducibility: Optional[FeedbackReproducibility] = None
+    severity: Optional[FeedbackSeverity] = None
+
+    @field_validator("title")
+    @classmethod
+    def title_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError("Title cannot be empty")
+        if len(v) > 200:
+            raise ValueError("Title must be 200 characters or fewer")
+        return v.strip()
+
+    @field_validator("description")
+    @classmethod
+    def description_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError("Description cannot be empty")
+        return v.strip()
+
+    @field_validator("rating")
+    @classmethod
+    def rating_range(cls, v):
+        if v is not None and not (1 <= v <= 5):
+            raise ValueError("Rating must be between 1 and 5")
+        return v
+
+
+class FeedbackResponse(BaseModel):
+    """Feedback data returned by API"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: Optional[int] = None
+    category: str
+    title: str
+    description: str
+    rating: Optional[int] = None
+    contact_email: Optional[str] = None
+    reproducibility: Optional[str] = None
+    severity: Optional[str] = None
+    submitted_at: datetime
+    status: str

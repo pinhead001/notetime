@@ -115,3 +115,25 @@ class WorkEntry(Base):
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
     task: Mapped["Task"] = relationship("Task", back_populates="work_entries", init=False)
+
+
+# -----------------------------------
+# Feedback
+# -----------------------------------
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    # Required fields first (no defaults)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    # Optional fields with defaults
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, default=None)
+    rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None)
+    contact_email: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+    browser_info: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+    reproducibility: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+    severity: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+    status: Mapped[str] = mapped_column(String, default="new")
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, insert_default=datetime.utcnow, init=False)

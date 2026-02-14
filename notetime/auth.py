@@ -156,3 +156,36 @@ def get_current_active_user(current_user: User = Depends(get_current_user)) -> U
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+
+def get_optional_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(
+        HTTPBearer(auto_error=False)
+    ),
+) -> Optional[User]:
+    """Return the current user if authenticated, or None for anonymous requests."""
+    token = None
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        token = cookie_token[7:] if cookie_token.startswith("Bearer ") else cookie_token
+    elif credentials:
+        token = credentials.credentials
+
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        return None
+
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if user is None or not user.is_active:
+        return None
+
+    return user

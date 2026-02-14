@@ -22,18 +22,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from notetime.db import SessionLocal, engine, get_db
-from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState, User
+from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState, User, Feedback
 from notetime.schemas import (
     TaskCreate, TaskResponse,
     WorkEntryCreate, WorkEntryResponse,
     WeekCreate, WeekResponse, WeeklyView,
     ProjectCreate, ProjectResponse,
-    UserRegister, UserLogin, Token, UserResponse
+    UserRegister, UserLogin, Token, UserResponse,
+    FeedbackCreate, FeedbackResponse
 )
 from notetime.summary import generate_weekly_summary
 from notetime.auth import (
     get_password_hash, verify_password, create_access_token,
-    get_current_user
+    get_current_user, get_optional_current_user
 )
 
 
@@ -1111,6 +1112,138 @@ async def defer_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')
+
+
+# ============================================
+# Feedback
+# ============================================
+
+VALID_CATEGORIES = {"bug_report", "feature_request", "general", "ui_ux", "performance"}
+VALID_SEVERITIES = {"critical", "high", "medium", "low", ""}
+VALID_REPRODUCIBILITY = {"always", "sometimes", "rarely", "na", ""}
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+async def feedback_form(
+    request: Request,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    """Render the beta feedback form."""
+    return templates.TemplateResponse(
+        "feedback.html",
+        {"request": request, "current_user": current_user, "success": False, "error": None},
+    )
+
+
+@app.post("/feedback", response_class=HTMLResponse)
+async def submit_feedback_form(
+    request: Request,
+    category: str = Form(...),
+    title: str = Form(...),
+    description: str = Form(...),
+    rating: Optional[str] = Form(None),
+    contact_email: Optional[str] = Form(None),
+    browser_info: Optional[str] = Form(None),
+    reproducibility: Optional[str] = Form(None),
+    severity: Optional[str] = Form(None),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Handle beta feedback form submission."""
+    # Validate
+    if category not in VALID_CATEGORIES:
+        return templates.TemplateResponse(
+            "feedback.html",
+            {"request": request, "current_user": current_user, "success": False,
+             "error": "Please select a valid feedback category."},
+            status_code=422,
+        )
+    title = title.strip()
+    description = description.strip()
+    if not title or len(title) > 200:
+        return templates.TemplateResponse(
+            "feedback.html",
+            {"request": request, "current_user": current_user, "success": False,
+             "error": "Title is required and must be 200 characters or fewer."},
+            status_code=422,
+        )
+    if not description:
+        return templates.TemplateResponse(
+            "feedback.html",
+            {"request": request, "current_user": current_user, "success": False,
+             "error": "Description is required."},
+            status_code=422,
+        )
+
+    # Parse optional fields
+    rating_int: Optional[int] = None
+    if rating:
+        try:
+            rating_int = int(rating)
+            if not (1 <= rating_int <= 5):
+                rating_int = None
+        except ValueError:
+            rating_int = None
+
+    severity_val = severity if severity in VALID_SEVERITIES - {""} else None
+    repro_val = reproducibility if reproducibility in VALID_REPRODUCIBILITY - {""} else None
+    contact = contact_email.strip() if contact_email and contact_email.strip() else None
+    browser = browser_info.strip() if browser_info and browser_info.strip() else None
+
+    feedback = Feedback(
+        user_id=current_user.id if current_user else None,
+        category=category,
+        title=title,
+        description=description,
+        rating=rating_int,
+        contact_email=contact,
+        browser_info=browser,
+        reproducibility=repro_val,
+        severity=severity_val,
+    )
+    db.add(feedback)
+    db.commit()
+
+    return templates.TemplateResponse(
+        "feedback.html",
+        {"request": request, "current_user": current_user, "success": True, "error": None},
+    )
+
+
+@app.post("/api/feedback", response_model=FeedbackResponse, status_code=201)
+async def submit_feedback_api(
+    payload: FeedbackCreate,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Submit feedback via JSON API."""
+    feedback = Feedback(
+        user_id=current_user.id if current_user else None,
+        category=payload.category,
+        title=payload.title,
+        description=payload.description,
+        rating=payload.rating,
+        contact_email=payload.contact_email,
+        browser_info=payload.browser_info,
+        reproducibility=payload.reproducibility,
+        severity=payload.severity,
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    return feedback
+
+
+@app.get("/api/feedback", response_model=List[FeedbackResponse])
+async def list_feedback(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List feedback submitted by the current user."""
+    entries = db.execute(
+        select(Feedback).where(Feedback.user_id == current_user.id).order_by(Feedback.submitted_at.desc())
+    ).scalars().all()
+    return entries
 
 
 # ============================================
