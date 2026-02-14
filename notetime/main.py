@@ -26,7 +26,7 @@ from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState, Use
 from notetime.schemas import (
     TaskCreate, TaskResponse, TaskUpdate,
     WorkEntryCreate, WorkEntryResponse, WorkEntryUpdate,
-    WeekCreate, WeekResponse, WeeklyView,
+    WeekCreate, WeekUpdate, WeekResponse, WeeklyView,
     ProjectCreate, ProjectResponse, ProjectUpdate,
     UserRegister, UserLogin, Token, UserResponse,
     FeedbackCreate, FeedbackResponse
@@ -384,6 +384,27 @@ async def get_week_api(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Week with id {week_id} not found"
         )
+    return week
+
+
+@app.patch("/api/weeks/{week_id}", response_model=WeekResponse)
+async def update_week_api(
+    week_id: int,
+    week_data: WeekUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a week's note (scratchpad text)."""
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+    if week_data.note is not None:
+        week.note = week_data.note
+    db.commit()
+    db.refresh(week)
     return week
 
 

@@ -354,6 +354,25 @@
             </div>
         </section>
 
+        <!-- Scratchpad Section -->
+        <section class="scratchpad">
+            <h2 class="section-header collapsible" onclick="toggleSection('scratchpad')">
+                <span class="toggle-icon">▼</span>
+                📝 Scratchpad
+            </h2>
+            <div class="section-content" id="scratchpad-content">
+                <div class="scratchpad-wrapper">
+                    <textarea
+                        id="scratchpad-textarea"
+                        class="scratchpad-textarea"
+                        placeholder="Notes, ideas, reminders — anything that doesn't fit elsewhere..."
+                        data-week-id="{{ week.id }}"
+                    >{{ week.note or '' }}</textarea>
+                    <span id="scratchpad-status" class="scratchpad-status"></span>
+                </div>
+            </div>
+        </section>
+
         <!-- Footer -->
         <footer>
             <p>Notetime MVP - Faster than paper</p>
@@ -406,6 +425,38 @@
                 icon.textContent = '▶';
             }
         }
+
+        // ========================================
+        // Scratchpad auto-save
+        // ========================================
+        (function() {
+            const textarea = document.getElementById('scratchpad-textarea');
+            const status = document.getElementById('scratchpad-status');
+            if (!textarea) return;
+
+            const weekId = textarea.dataset.weekId;
+            let saveTimer = null;
+
+            textarea.addEventListener('input', function() {
+                status.textContent = 'Unsaved…';
+                clearTimeout(saveTimer);
+                saveTimer = setTimeout(saveScratchpad, 1200);
+            });
+
+            async function saveScratchpad() {
+                try {
+                    const resp = await fetch(`/api/weeks/${weekId}`, {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({note: textarea.value})
+                    });
+                    status.textContent = resp.ok ? 'Saved' : 'Error saving';
+                    if (resp.ok) setTimeout(() => { status.textContent = ''; }, 2000);
+                } catch (e) {
+                    status.textContent = 'Error saving';
+                }
+            }
+        })();
 
         // ========================================
         // Day 12: PM Section - Priority Cycling

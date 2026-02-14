@@ -139,6 +139,10 @@ class WorkEntryCreate(BaseModel):
 
 # Update schemas use all-Optional fields so the client only needs to send
 # the fields they want to change (PATCH-style semantics, even though we use PUT).
+class WeekUpdate(BaseModel):
+    note: Optional[str] = None
+
+
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     is_active: Optional[bool] = None
