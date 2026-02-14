@@ -20,7 +20,7 @@ sys.path.insert(0, str(parent_dir))
 
 from datetime import date, timedelta
 from notetime.db import SessionLocal, engine
-from notetime.models import Base, Week, Project, Task, WorkEntry
+from notetime.models import Base, User, Week, Project, Task, WorkEntry
 from notetime.summary import generate_weekly_summary, format_summary_text, get_weekly_totals
 
 
@@ -33,18 +33,28 @@ def create_sample_data():
 
     session = SessionLocal()
 
+    # Create demo user
+    user = User(
+        email="demo@example.com",
+        username="demouser",
+        hashed_password="$2b$12$placeholder_hashed_password"
+    )
+    session.add(user)
+    session.flush()
+    print(f"Created demo user: {user.username}")
+
     # Create week (current week)
     today = date.today()
     week_start = today - timedelta(days=today.weekday())  # Monday
-    week = Week(start_date=week_start)
+    week = Week(start_date=week_start, user_id=user.id)
     session.add(week)
     session.flush()
 
     print(f"Created week starting {week_start}")
 
     # Create projects
-    client_project = Project(name="Client Work")
-    internal_project = Project(name="Internal Projects")
+    client_project = Project(name="Client Work", user_id=user.id)
+    internal_project = Project(name="Internal Projects", user_id=user.id)
     session.add(client_project)
     session.add(internal_project)
     session.flush()

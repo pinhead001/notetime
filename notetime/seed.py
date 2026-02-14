@@ -1,25 +1,44 @@
 from datetime import date, timedelta
 from sqlalchemy import select
-from notetime.db import SessionLocal
-from notetime.models import Week, Project, Task
+from notetime.db import SessionLocal, engine
+from notetime.models import User, Week, Project, Task, Base
+from notetime.auth import get_password_hash
 
 def seed():
+    # Create all tables if they don't exist
+    Base.metadata.create_all(engine)
+
     session = SessionLocal()
+
+    # Create or get a test user
+    user = session.scalar(select(User).where(User.email == "seed@example.com"))
+    if not user:
+        user = User(
+            email="seed@example.com",
+            username="seeduser",
+            hashed_password=get_password_hash("password")  # Default password: "password"
+        )
+        session.add(user)
+        session.flush()
+        print("Created seed user with email: seed@example.com, password: password")
 
     # Determine current week (Monday)
     week_start = date.today() - timedelta(days=date.today().weekday())
 
-    # Check if week already exists
+    # Check if week already exists for this user
     exists = session.scalar(
-        select(Week).where(Week.start_date == week_start)
+        select(Week).where(
+            Week.start_date == week_start,
+            Week.user_id == user.id
+        )
     )
     if exists:
         print("Week already exists.")
         return
 
     # Create seed data
-    week = Week(start_date=week_start)
-    project = Project(name="Notetime")
+    week = Week(start_date=week_start, user_id=user.id)
+    project = Project(name="Notetime", user_id=user.id)
 
     # Add week and project first to get IDs
     session.add(week)

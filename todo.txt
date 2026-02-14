@@ -2,8 +2,8 @@
 TODO:
 
 p1
-fix project not being tagged to time entry, or not carrying through to weekly summary; show project badge and task badge on time entry, accumulate time in weekly summary at task level
-add ability to edit task names
+test multi-user locally
+test multi-user in render
 
 p2
 complete development of server GCP

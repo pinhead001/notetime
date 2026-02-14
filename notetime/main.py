@@ -10,32 +10,36 @@ API will be available at:
     http://localhost:8000/docs (API docs)
     http://localhost:8000 (Web UI)
 """
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 from typing import List, Optional
 from pathlib import Path
-from io import StringIO
-import csv
-from fastapi import FastAPI, HTTPException, Depends, status, Request, Form
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Depends, status, Request, Form, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
-from notetime.db import SessionLocal, engine
-from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState
+from notetime.db import SessionLocal, engine, get_db
+from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState, User, Feedback
 from notetime.schemas import (
-    TaskCreate, TaskUpdate, TaskResponse,
-    WorkEntryCreate, WorkEntryUpdate, WorkEntryResponse,
-    WeekResponse, WeeklyView,
-    ProjectResponse, ProjectUpdate
+    TaskCreate, TaskResponse, TaskUpdate,
+    WorkEntryCreate, WorkEntryResponse, WorkEntryUpdate,
+    WeekCreate, WeekResponse, WeeklyView,
+    ProjectCreate, ProjectResponse, ProjectUpdate,
+    UserRegister, UserLogin, Token, UserResponse,
+    FeedbackCreate, FeedbackResponse
 )
 from notetime.summary import generate_weekly_summary
-from notetime.nl_parser import parse_entry, EntryType
+from notetime.auth import (
+    get_password_hash, verify_password, create_access_token,
+    get_current_user, get_optional_current_user
+)
 
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (commented out for testing - tables should be created via migrations or seed scripts)
+# Base.metadata.create_all(bind=engine)
 
 
 # Initialize FastAPI app
@@ -54,72 +58,528 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
-# Dependency to get database session
-def get_db():
-    """Get database session for dependency injection"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# ============================================
+# Authentication Endpoints
+# ============================================
+
+@app.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(user_data: UserRegister, db: Session = Depends(get_db)):
+    """
+    Register a new user.
+
+    Args:
+        user_data: User registration data (email, username, password)
+
+    Returns:
+        Created user details (without password)
+
+    Raises:
+        400: If username or email already exists
+    """
+    # Check if username already exists
+    existing_user = db.scalars(
+        select(User).where(User.username == user_data.username)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )
+
+    # Check if email already exists
+    existing_email = db.scalars(
+        select(User).where(User.email == user_data.email)
+    ).first()
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+
+    # Create new user
+    hashed_password = get_password_hash(user_data.password)
+    db_user = User(
+        email=user_data.email,
+        username=user_data.username,
+        hashed_password=hashed_password,
+        is_active=True
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    return db_user
+
+
+@app.post("/api/auth/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """
+    Login and get access token.
+
+    Args:
+        form_data: OAuth2 form with username (or email) and password
+
+    Returns:
+        Access token
+
+    Raises:
+        401: If credentials are invalid
+    """
+    # Find user by username or email
+    user = db.scalars(
+        select(User).where(
+            (User.username == form_data.username) | (User.email == form_data.username)
+        )
+    ).first()
+
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
+
+    # Create access token
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    return Token(access_token=access_token, token_type="bearer")
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """
+    Get current user details.
+
+    Returns:
+        Current user details
+
+    Requires:
+        Valid authentication token
+    """
+    return current_user
+
+
+# ============================================
+# Authentication UI Routes
+# ============================================
+
+@app.get("/auth/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Display login page"""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.post("/auth/login", response_class=HTMLResponse)
+async def login_form(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Handle login form submission"""
+    # Find user by username
+    user = db.scalars(
+        select(User).where(User.username == username)
+    ).first()
+
+    if not user or not verify_password(password, user.hashed_password):
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Incorrect username or password"},
+            status_code=401
+        )
+
+    if not user.is_active:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Account is inactive"},
+            status_code=400
+        )
+
+    # Create access token
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    # Redirect to home page with token in cookie
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {access_token}",
+        httponly=True,
+        max_age=60 * 60 * 24 * 7,  # 7 days
+        samesite="lax"
+    )
+    return response
+
+
+@app.get("/auth/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    """Display registration page"""
+    return templates.TemplateResponse("register.html", {"request": request})
+
+
+@app.post("/auth/register", response_class=HTMLResponse)
+async def register_form(
+    request: Request,
+    email: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Handle registration form submission"""
+    # Validate username length
+    if len(username) < 3:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Username must be at least 3 characters"},
+            status_code=400
+        )
+
+    # Validate password length
+    if len(password) < 6:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Password must be at least 6 characters"},
+            status_code=400
+        )
+
+    # Check if username already exists
+    existing_user = db.scalars(
+        select(User).where(User.username == username)
+    ).first()
+    if existing_user:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Username already registered"},
+            status_code=400
+        )
+
+    # Check if email already exists
+    existing_email = db.scalars(
+        select(User).where(User.email == email)
+    ).first()
+    if existing_email:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Email already registered"},
+            status_code=400
+        )
+
+    # Create new user
+    hashed_password = get_password_hash(password)
+    db_user = User(
+        email=email,
+        username=username,
+        hashed_password=hashed_password,
+        is_active=True
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    # Create access token
+    access_token = create_access_token(data={"sub": str(db_user.id)})
+
+    # Redirect to home page with token in cookie
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {access_token}",
+        httponly=True,
+        max_age=60 * 60 * 24 * 7,  # 7 days
+        samesite="lax"
+    )
+    return response
+
+
+@app.get("/auth/logout")
+async def logout():
+    """Logout and clear authentication cookie"""
+    response = RedirectResponse(url="/auth/login", status_code=303)
+    response.delete_cookie(key="access_token")
+    return response
+
+
+# ============================================
+# Week API Endpoints
+# ============================================
+
+@app.post("/api/weeks", response_model=WeekResponse)
+async def create_week_api(
+    week_data: WeekCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new week (API endpoint with JSON body).
+
+    Args:
+        week_data: Week creation data (start_date, note)
+
+    Returns:
+        Created week with ID
+
+    Raises:
+        400: If week with this start_date already exists for this user
+    """
+    # Check if week already exists for this user
+    existing = db.scalars(
+        select(Week).where(
+            Week.start_date == week_data.start_date,
+            Week.user_id == current_user.id
+        )
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Week starting {week_data.start_date} already exists"
+        )
+
+    # Create week
+    db_week = Week(
+        start_date=week_data.start_date,
+        note=week_data.note,
+        user_id=current_user.id
+    )
+    db.add(db_week)
+    db.commit()
+    db.refresh(db_week)
+
+    return db_week
+
+
+@app.get("/api/weeks", response_model=List[WeekResponse])
+async def list_weeks_api(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all weeks for the authenticated user (API endpoint).
+
+    Returns:
+        List of weeks belonging to the user
+    """
+    weeks = db.scalars(
+        select(Week).where(Week.user_id == current_user.id).order_by(Week.start_date.desc())
+    ).all()
+    return weeks
+
+
+@app.get("/api/weeks/{week_id}", response_model=WeekResponse)
+async def get_week_api(
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific week by ID."""
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+    return week
+
+
+@app.get("/api/weeks/{week_id}/tasks", response_model=List[TaskResponse])
+async def list_tasks_for_week_api(
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all tasks for a specific week."""
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+    tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
+    return tasks
+
+
+# ============================================
+# Project API Endpoints
+# ============================================
+
+@app.post("/api/projects", response_model=ProjectResponse)
+async def create_project_api(
+    project_data: ProjectCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new project (API endpoint with JSON body).
+
+    Args:
+        project_data: Project creation data (name, is_active)
+
+    Returns:
+        Created project with ID
+
+    Raises:
+        400: If project with this name already exists for this user
+    """
+    # Check if project already exists for this user
+    existing = db.scalars(
+        select(Project).where(
+            Project.name == project_data.name,
+            Project.user_id == current_user.id
+        )
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Project '{project_data.name}' already exists"
+        )
+
+    # Create project
+    db_project = Project(
+        name=project_data.name,
+        is_active=project_data.is_active,
+        user_id=current_user.id
+    )
+    db.add(db_project)
+    db.commit()
+    db.refresh(db_project)
+
+    return db_project
+
+
+@app.get("/api/projects", response_model=List[ProjectResponse])
+async def list_projects_api(
+    active_only: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all projects for the authenticated user (API endpoint).
+
+    Args:
+        active_only: If True, only return active projects (default: True)
+
+    Returns:
+        List of projects belonging to the user
+    """
+    query = select(Project).where(Project.user_id == current_user.id)
+    if active_only:
+        query = query.where(Project.is_active == True)
+
+    projects = db.scalars(query).all()
+    return projects
+
+
+@app.get("/api/projects/{project_id}", response_model=ProjectResponse)
+async def get_project_api(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific project by ID."""
+    project = db.get(Project, project_id)
+    if not project or project.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    return project
+
+
+@app.put("/api/projects/{project_id}", response_model=ProjectResponse)
+async def update_project_api(
+    project_id: int,
+    project_data: ProjectUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update an existing project."""
+    project = db.get(Project, project_id)
+    if not project or project.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    if project_data.name is not None:
+        project.name = project_data.name
+    if project_data.is_active is not None:
+        project.is_active = project_data.is_active
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project_api(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a project."""
+    project = db.get(Project, project_id)
+    if not project or project.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    db.delete(project)
+    db.commit()
+    return {"message": "Project deleted"}
 
 
 # ============================================
 # Task Endpoints
 # ============================================
 
-@app.post("/api/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/tasks", response_model=TaskResponse)
 async def create_task_api(
-    title: str = Form(...),
-    week_id: int = Form(...),
-    state: str = Form("active"),
-    priority: int = Form(3),
-    project_id: Optional[int] = Form(None),
-    delegate: Optional[str] = Form(None),
+    task_data: TaskCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Create a new task (accepts form data for HTMX or JSON for API).
+    Create a new task (JSON body).
 
     Args:
-        title: Task title
-        week_id: Week ID
-        state: Task state (default: active)
-        priority: Priority level (default: 3)
-        project_id: Project ID (optional)
-        delegate: Delegate name (optional)
+        task_data: Task creation data (title, week_id, state, priority, project_id, delegate)
 
     Returns:
         Created task with ID
 
     Raises:
-        404: If week_id or project_id doesn't exist
+        404: If week_id or project_id doesn't exist or doesn't belong to user
     """
-    # Verify week exists
-    week = db.get(Week, week_id)
-    if not week:
+    # Verify week exists and belongs to user
+    week = db.get(Week, task_data.week_id)
+    if not week or week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Week with id {week_id} not found"
+            detail=f"Week with id {task_data.week_id} not found"
         )
 
-    # Verify project exists if provided
-    if project_id is not None and project_id != "":
-        project = db.get(Project, project_id)
-        if not project:
+    # Verify project exists and belongs to user if provided
+    if task_data.project_id is not None:
+        project = db.get(Project, task_data.project_id)
+        if not project or project.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Project with id {project_id} not found"
+                detail=f"Project with id {task_data.project_id} not found"
             )
 
     # Create task
     db_task = Task(
-        title=title,
-        week_id=week_id,
-        state=state,
-        priority=priority,
-        project_id=project_id if project_id and project_id != "" else None,
-        delegate=delegate
+        title=task_data.title,
+        week_id=task_data.week_id,
+        state=task_data.state,
+        priority=task_data.priority,
+        project_id=task_data.project_id,
+        delegate=task_data.delegate
     )
     db.add(db_task)
     db.commit()
@@ -128,101 +588,85 @@ async def create_task_api(
     return db_task
 
 
-@app.put("/tasks/{task_id}", response_model=TaskResponse)
-def update_task(
+@app.put("/api/tasks/{task_id}", response_model=TaskResponse)
+async def update_task_api(
     task_id: int,
-    task_update: TaskUpdate,
+    task_data: TaskUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Update an existing task.
-
-    Args:
-        task_id: ID of task to update
-        task_update: Fields to update (JSON body)
-
-    Returns:
-        Updated task
-
-    Raises:
-        404: If task not found
-    """
+    """Update an existing task (JSON body)."""
     db_task = db.get(Task, task_id)
-    if not db_task:
+    if not db_task or db_task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with id {task_id} not found"
         )
 
-    # Update fields if provided (check model_fields_set to distinguish between None and not provided)
-    if 'title' in task_update.model_fields_set:
-        db_task.title = task_update.title
-    if 'state' in task_update.model_fields_set:
-        # Validate state
+    if task_data.title is not None:
+        db_task.title = task_data.title
+    if task_data.state is not None:
         valid_states = [s.value for s in TaskState]
-        if task_update.state not in valid_states:
+        if task_data.state not in valid_states:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid state. Must be one of: {valid_states}"
             )
-        db_task.state = task_update.state
-    if 'priority' in task_update.model_fields_set:
-        db_task.priority = task_update.priority
-    if 'delegate' in task_update.model_fields_set:
-        # Allow setting delegate to None to clear it
-        db_task.delegate = task_update.delegate
+        db_task.state = task_data.state
+    if task_data.priority is not None:
+        db_task.priority = task_data.priority
+    if task_data.delegate is not None:
+        db_task.delegate = task_data.delegate
 
     db.commit()
     db.refresh(db_task)
-
     return db_task
 
 
-# API version of update task (for JSON requests from frontend)
-@app.put("/api/tasks/{task_id}", response_model=TaskResponse)
-def update_task_api(
+@app.put("/tasks/{task_id}", response_model=TaskResponse)
+def update_task(
     task_id: int,
-    task_update: TaskUpdate,
+    title: Optional[str] = None,
+    state: Optional[str] = None,
+    priority: Optional[int] = None,
+    delegate: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Update an existing task (API endpoint for JSON requests).
-
-    Same as PUT /tasks/{task_id} but with /api prefix for frontend consistency.
-    """
+    """Update an existing task (query params, legacy endpoint)."""
     db_task = db.get(Task, task_id)
-    if not db_task:
+    if not db_task or db_task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with id {task_id} not found"
         )
 
-    # Update fields if provided (check model_fields_set to distinguish between None and not provided)
-    if 'title' in task_update.model_fields_set:
-        db_task.title = task_update.title
-    if 'state' in task_update.model_fields_set:
-        # Validate state
+    if title is not None:
+        db_task.title = title
+    if state is not None:
         valid_states = [s.value for s in TaskState]
-        if task_update.state not in valid_states:
+        if state not in valid_states:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid state. Must be one of: {valid_states}"
             )
-        db_task.state = task_update.state
-    if 'priority' in task_update.model_fields_set:
-        db_task.priority = task_update.priority
-    if 'delegate' in task_update.model_fields_set:
-        # Allow setting delegate to None to clear it
-        db_task.delegate = task_update.delegate
+        db_task.state = state
+    if priority is not None:
+        db_task.priority = priority
+    if delegate is not None:
+        db_task.delegate = delegate
 
     db.commit()
     db.refresh(db_task)
-
     return db_task
 
 
 @app.get("/tasks/{task_id}", response_model=TaskResponse)
-def get_task(task_id: int, db: Session = Depends(get_db)):
+def get_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Get a specific task by ID.
 
@@ -233,10 +677,10 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
         Task details
 
     Raises:
-        404: If task not found
+        404: If task not found or doesn't belong to user
     """
     db_task = db.get(Task, task_id)
-    if not db_task:
+    if not db_task or db_task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with id {task_id} not found"
@@ -245,104 +689,43 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     return db_task
 
 
-@app.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    """
-    Delete a task.
-
-    Args:
-        task_id: ID of task to delete
-
-    Raises:
-        404: If task not found
-    """
-    db_task = db.get(Task, task_id)
-    if not db_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task with id {task_id} not found"
-        )
-
-    db.delete(db_task)
-    db.commit()
-
-
 # ============================================
 # Work Entry Endpoints
 # ============================================
 
-@app.post("/api/work_entries", response_model=WorkEntryResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/work_entries", response_model=WorkEntryResponse)
 async def create_work_entry_api(
-    task_id: int = Form(...),
-    date: date = Form(...),
-    minutes: Optional[int] = Form(None),
-    start_time: Optional[str] = Form(None),
-    end_time: Optional[str] = Form(None),
-    note: Optional[str] = Form(None),
+    entry_data: WorkEntryCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Create a new work entry (time log) - accepts form data for HTMX.
+    Create a new work entry (time log) - JSON body.
 
     Args:
-        task_id: ID of task
-        date: Date of work
-        minutes: Minutes worked (optional if start_time/end_time provided)
-        start_time: Start time (HH:MM format, optional)
-        end_time: End time (HH:MM format, optional)
-        note: Optional note
+        entry_data: Work entry creation data (task_id, date, minutes, note)
 
     Returns:
         Created work entry with ID
 
     Raises:
-        404: If task_id doesn't exist
+        404: If task_id doesn't exist or doesn't belong to user
         422: If validation fails (e.g., negative minutes)
     """
-    from datetime import datetime
-    from notetime.time_engine import duration_minutes
-
-    # Calculate minutes from start/end time if provided
-    calculated_minutes = None
-    start_time_obj = None
-    end_time_obj = None
-
-    if start_time and end_time:
-        try:
-            start_time_obj = datetime.strptime(start_time, "%H:%M").time()
-            end_time_obj = datetime.strptime(end_time, "%H:%M").time()
-            calculated_minutes = duration_minutes(start_time_obj, end_time_obj)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invalid time format. Use HH:MM"
-            )
-
-    # Use calculated minutes if available, otherwise use provided minutes
-    final_minutes = calculated_minutes if calculated_minutes is not None else minutes
-
-    if final_minutes is None or final_minutes <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Minutes must be positive or provide valid start/end times"
-        )
-
-    # Verify task exists
-    task = db.get(Task, task_id)
-    if not task:
+    # Verify task exists and belongs to user
+    task = db.get(Task, entry_data.task_id)
+    if not task or task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task with id {task_id} not found"
+            detail=f"Task with id {entry_data.task_id} not found"
         )
 
     # Create work entry
     db_entry = WorkEntry(
-        task_id=task_id,
-        date=date,
-        minutes=final_minutes,
-        start_time=start_time_obj,
-        end_time=end_time_obj,
-        note=note
+        task_id=entry_data.task_id,
+        date=entry_data.date,
+        minutes=entry_data.minutes,
+        note=entry_data.note
     )
     db.add(db_entry)
     db.commit()
@@ -351,299 +734,99 @@ async def create_work_entry_api(
     return db_entry
 
 
-@app.get("/work_entries/{entry_id}", response_model=WorkEntryResponse)
-def get_work_entry(entry_id: int, db: Session = Depends(get_db)):
-    """
-    Get a specific work entry by ID.
+@app.get("/api/tasks/{task_id}/work_entries", response_model=List[WorkEntryResponse])
+async def list_work_entries_for_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all work entries for a specific task."""
+    task = db.get(Task, task_id)
+    if not task or task.week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {task_id} not found"
+        )
+    entries = db.scalars(select(WorkEntry).where(WorkEntry.task_id == task_id)).all()
+    return entries
 
-    Args:
-        entry_id: ID of work entry to retrieve
 
-    Returns:
-        Work entry details
-
-    Raises:
-        404: If work entry not found
-    """
+@app.get("/api/work_entries/{entry_id}", response_model=WorkEntryResponse)
+async def get_work_entry_api(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific work entry by ID."""
     db_entry = db.get(WorkEntry, entry_id)
-    if not db_entry:
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
         )
-
     return db_entry
 
 
 @app.put("/api/work_entries/{entry_id}", response_model=WorkEntryResponse)
-async def update_work_entry(
+async def update_work_entry_api(
     entry_id: int,
-    entry_update: WorkEntryUpdate,
+    entry_data: WorkEntryUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Update a work entry.
-
-    Args:
-        entry_id: ID of work entry to update
-        entry_update: Fields to update (JSON body)
-
-    Returns:
-        Updated work entry
-
-    Raises:
-        404: If work entry not found
-    """
-    from datetime import datetime
-    from notetime.time_engine import duration_minutes as calc_duration
-
+    """Update an existing work entry."""
     db_entry = db.get(WorkEntry, entry_id)
-    if not db_entry:
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
         )
-
-    # Update fields if provided
-    if entry_update.date is not None:
-        db_entry.date = entry_update.date
-
-    # Handle time updates
-    start_time_obj = db_entry.start_time
-    end_time_obj = db_entry.end_time
-
-    # Handle explicit start_time update
-    if entry_update.start_time is not None:
-        if entry_update.start_time == "":
-            db_entry.start_time = None
-            start_time_obj = None
-        else:
-            try:
-                start_time_obj = datetime.strptime(entry_update.start_time, "%H:%M").time()
-                db_entry.start_time = start_time_obj
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Invalid start time format. Use HH:MM"
-                )
-
-    # Handle explicit end_time update
-    if entry_update.end_time is not None:
-        if entry_update.end_time == "":
-            db_entry.end_time = None
-            end_time_obj = None
-        else:
-            try:
-                end_time_obj = datetime.strptime(entry_update.end_time, "%H:%M").time()
-                db_entry.end_time = end_time_obj
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Invalid end time format. Use HH:MM"
-                )
-
-    # Handle minutes update
-    if entry_update.minutes is not None:
-        db_entry.minutes = entry_update.minutes
-
-        # If start_time exists and end_time wasn't explicitly set to null,
-        # calculate new end_time based on start_time + minutes
-        if start_time_obj and entry_update.end_time is None:
-            # Calculate new end time
-            start_dt = datetime.combine(datetime.today(), start_time_obj)
-            end_dt = start_dt + timedelta(minutes=entry_update.minutes)
-            db_entry.end_time = end_dt.time()
-            end_time_obj = db_entry.end_time
-
-    # Recalculate minutes if both times are present and minutes wasn't explicitly updated
-    if start_time_obj and end_time_obj and entry_update.minutes is None:
-        calculated_minutes = calc_duration(start_time_obj, end_time_obj)
-        db_entry.minutes = calculated_minutes
-
-    if entry_update.note is not None:
-        db_entry.note = entry_update.note
-
+    if entry_data.minutes is not None:
+        if entry_data.minutes <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Minutes must be positive"
+            )
+        db_entry.minutes = entry_data.minutes
+    if entry_data.note is not None:
+        db_entry.note = entry_data.note
     db.commit()
     db.refresh(db_entry)
-
     return db_entry
 
 
-@app.delete("/api/work_entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_work_entry(entry_id: int, db: Session = Depends(get_db)):
+@app.delete("/api/work_entries/{entry_id}")
+async def delete_work_entry_api(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Delete a work entry."""
     db_entry = db.get(WorkEntry, entry_id)
-    if not db_entry:
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
         )
     db.delete(db_entry)
     db.commit()
+    return {"message": "Work entry deleted"}
 
 
-# ============================================
-# Natural Language Entry (Notebook Mode)
-# ============================================
-
-@app.post("/api/quick-add")
-async def quick_add_entry(
-    text: str = Form(...),
-    week_id: int = Form(...),
-    default_task_id: Optional[int] = Form(None),
+@app.get("/work_entries/{entry_id}", response_model=WorkEntryResponse)
+def get_work_entry(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Parse and create entry from natural language input.
-
-    Examples:
-    - "9-11 worked on API" → time entry
-    - "2h fixed bug" → time entry
-    - "P1 deploy to production" → task
-    - "@API update endpoints" → task with project
-
-    Returns:
-        Created entry (task or work entry)
-    """
-    parsed = parse_entry(text, week_id, default_task_id)
-
-    if parsed["type"] == EntryType.TIME_LOG:
-        data = parsed["data"]
-
-        # Handle project and task name if provided
-        project_name = data.pop("project_name", None)
-        task_name = data.pop("task_name", None)
-
-        # If no task_id provided, try to find or create task based on project/task names
-        if not data.get("task_id"):
-            target_task = None
-
-            # If both project and task names provided, find/create them
-            if project_name and task_name:
-                # Find or create project
-                project = db.scalar(
-                    select(Project).where(Project.name == project_name)
-                )
-                if not project:
-                    project = Project(name=project_name, is_active=True)
-                    db.add(project)
-                    db.commit()
-                    db.refresh(project)
-
-                # Find or create task
-                target_task = db.scalar(
-                    select(Task).where(
-                        Task.title == task_name,
-                        Task.project_id == project.id,
-                        Task.week_id == week_id
-                    )
-                )
-                if not target_task:
-                    target_task = Task(
-                        title=task_name,
-                        week_id=week_id,
-                        project_id=project.id,
-                        state="active",
-                        priority=1
-                    )
-                    db.add(target_task)
-                    db.commit()
-                    db.refresh(target_task)
-            # If only task name provided
-            elif task_name:
-                target_task = db.scalar(
-                    select(Task).where(
-                        Task.title == task_name,
-                        Task.week_id == week_id
-                    )
-                )
-                if not target_task:
-                    target_task = Task(
-                        title=task_name,
-                        week_id=week_id,
-                        state="active",
-                        priority=1
-                    )
-                    db.add(target_task)
-                    db.commit()
-                    db.refresh(target_task)
-
-            # Fallback to Misc task
-            if not target_task:
-                target_task = db.scalar(
-                    select(Task).where(
-                        Task.week_id == week_id,
-                        Task.title == "Misc"
-                    )
-                )
-                if not target_task:
-                    target_task = Task(
-                        title="Misc",
-                        week_id=week_id,
-                        state="active",
-                        priority=3
-                    )
-                    db.add(target_task)
-                    db.commit()
-                    db.refresh(target_task)
-
-            data["task_id"] = target_task.id
-
-        # Create work entry
-        work_entry = WorkEntry(**data)
-        db.add(work_entry)
-        db.commit()
-        db.refresh(work_entry)
-
-        return {
-            "type": "time_log",
-            "entry": {
-                "id": work_entry.id,
-                "task_id": work_entry.task_id,
-                "date": str(work_entry.date),
-                "minutes": work_entry.minutes,
-                "note": work_entry.note
-            }
-        }
-
-    elif parsed["type"] == EntryType.TASK:
-        data = parsed["data"]
-
-        # Handle project name if provided
-        if "project_name" in data:
-            project_name = data.pop("project_name")
-            # Find or create project
-            project = db.scalar(
-                select(Project).where(Project.name == project_name)
-            )
-            if not project:
-                project = Project(name=project_name, is_active=True)
-                db.add(project)
-                db.commit()
-                db.refresh(project)
-            data["project_id"] = project.id
-
-        # Create task
-        task = Task(**data)
-        db.add(task)
-        db.commit()
-        db.refresh(task)
-
-        return {
-            "type": "task",
-            "entry": {
-                "id": task.id,
-                "title": task.title,
-                "priority": task.priority,
-                "state": task.state
-            }
-        }
-
-    else:
+    """Get a specific work entry by ID (legacy endpoint without /api/ prefix)."""
+    db_entry = db.get(WorkEntry, entry_id)
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Could not parse entry. Try formats like '9-11 worked on API' or 'P1 deploy feature'"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work entry with id {entry_id} not found"
         )
+    return db_entry
 
 
 # ============================================
@@ -651,7 +834,12 @@ async def quick_add_entry(
 # ============================================
 
 @app.post("/weeks", response_model=WeekResponse, status_code=status.HTTP_201_CREATED)
-def create_week(start_date: date, note: Optional[str] = None, db: Session = Depends(get_db)):
+def create_week(
+    start_date: date,
+    note: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Create a new week.
 
@@ -663,11 +851,14 @@ def create_week(start_date: date, note: Optional[str] = None, db: Session = Depe
         Created week with ID
 
     Raises:
-        400: If week with this start_date already exists
+        400: If week with this start_date already exists for this user
     """
-    # Check if week already exists
+    # Check if week already exists for this user
     existing = db.scalars(
-        select(Week).where(Week.start_date == start_date)
+        select(Week).where(
+            Week.start_date == start_date,
+            Week.user_id == current_user.id
+        )
     ).first()
 
     if existing:
@@ -677,7 +868,7 @@ def create_week(start_date: date, note: Optional[str] = None, db: Session = Depe
         )
 
     # Create week
-    db_week = Week(start_date=start_date, note=note)
+    db_week = Week(start_date=start_date, note=note, user_id=current_user.id)
     db.add(db_week)
     db.commit()
     db.refresh(db_week)
@@ -686,9 +877,12 @@ def create_week(start_date: date, note: Optional[str] = None, db: Session = Depe
 
 
 @app.get("/weeks/current", response_model=WeeklyView)
-def get_current_week(db: Session = Depends(get_db)):
+def get_current_week(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Get the current week's data.
+    Get the current week's data for the authenticated user.
 
     Finds or creates the week starting on the most recent Monday.
 
@@ -700,24 +894,31 @@ def get_current_week(db: Session = Depends(get_db)):
     days_since_monday = today.weekday()
     week_start = today - timedelta(days=days_since_monday)
 
-    # Find or create week
+    # Find or create week for this user
     week = db.scalars(
-        select(Week).where(Week.start_date == week_start)
+        select(Week).where(
+            Week.start_date == week_start,
+            Week.user_id == current_user.id
+        )
     ).first()
 
     if not week:
         # Create the week if it doesn't exist
-        week = Week(start_date=week_start)
+        week = Week(start_date=week_start, user_id=current_user.id)
         db.add(week)
         db.commit()
         db.refresh(week)
 
     # Return full weekly view
-    return get_week(week.id, db)
+    return get_week(week.id, current_user, db)
 
 
 @app.get("/weeks/{week_id}", response_model=WeeklyView)
-def get_week(week_id: int, db: Session = Depends(get_db)):
+def get_week(
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Get complete weekly view including tasks, work entries, and summary.
 
@@ -728,11 +929,11 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
         WeeklyView with week, tasks, work entries, projects, and summary
 
     Raises:
-        404: If week not found
+        404: If week not found or doesn't belong to user
     """
-    # Get week
+    # Get week and verify ownership
     week = db.get(Week, week_id)
-    if not week:
+    if not week or week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Week with id {week_id} not found"
@@ -743,22 +944,23 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
         select(Task).where(Task.week_id == week_id)
     ).all()
 
-    # Get all work entries for these tasks (with task and project relationships)
+    # Get all work entries for these tasks
     if tasks:
         task_ids = [task.id for task in tasks]
         work_entries = db.scalars(
-            select(WorkEntry)
-            .where(WorkEntry.task_id.in_(task_ids))
-            .options(joinedload(WorkEntry.task).joinedload(Task.project))
+            select(WorkEntry).where(WorkEntry.task_id.in_(task_ids))
         ).all()
     else:
         work_entries = []
 
-    # Get all projects referenced by tasks
+    # Get all projects referenced by tasks (only user's projects)
     project_ids = list(set(task.project_id for task in tasks if task.project_id is not None))
     if project_ids:
         projects = db.scalars(
-            select(Project).where(Project.id.in_(project_ids))
+            select(Project).where(
+                Project.id.in_(project_ids),
+                Project.user_id == current_user.id
+            )
         ).all()
     else:
         projects = []
@@ -775,144 +977,36 @@ def get_week(week_id: int, db: Session = Depends(get_db)):
     )
 
 
-@app.get("/api/weeks/{week_id}/export")
-def export_week_csv(week_id: int, db: Session = Depends(get_db)):
-    """
-    Export week data to CSV format.
-
-    Args:
-        week_id: ID of week to export
-
-    Returns:
-        CSV file with tasks, work entries, and summary
-
-    Raises:
-        404: If week not found
-    """
-    # Get week data
-    week = db.get(Week, week_id)
-    if not week:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Week with id {week_id} not found"
-        )
-
-    # Get all data
-    tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
-
-    if tasks:
-        task_ids = [task.id for task in tasks]
-        work_entries = db.scalars(
-            select(WorkEntry).where(WorkEntry.task_id.in_(task_ids))
-        ).all()
-    else:
-        work_entries = []
-
-    # Get projects
-    project_ids = list(set(task.project_id for task in tasks if task.project_id is not None))
-    projects_map = {}
-    if project_ids:
-        projects = db.scalars(select(Project).where(Project.id.in_(project_ids))).all()
-        projects_map = {p.id: p.name for p in projects}
-
-    # Generate summary
-    summary = generate_weekly_summary(week_id, db)
-
-    # Create CSV in memory
-    output = StringIO()
-    writer = csv.writer(output)
-
-    # Week header
-    writer.writerow(["Notetime - Weekly Export"])
-    writer.writerow(["Week Starting:", week.start_date])
-    if week.note:
-        writer.writerow(["Note:", week.note])
-    writer.writerow([])
-
-    # Tasks section
-    writer.writerow(["TASKS"])
-    writer.writerow(["Title", "Project", "State", "Priority", "Delegate"])
-    for task in tasks:
-        project_name = projects_map.get(task.project_id, "")
-        writer.writerow([
-            task.title,
-            project_name,
-            task.state,
-            task.priority,
-            task.delegate or ""
-        ])
-    writer.writerow([])
-
-    # Work entries section
-    writer.writerow(["WORK ENTRIES"])
-    writer.writerow(["Task", "Date", "Start Time", "End Time", "Minutes", "Hours", "Note"])
-    for entry in work_entries:
-        task = next((t for t in tasks if t.id == entry.task_id), None)
-        task_title = task.title if task else f"Task {entry.task_id}"
-        start_time_str = entry.start_time.strftime("%H:%M") if entry.start_time else ""
-        end_time_str = entry.end_time.strftime("%H:%M") if entry.end_time else ""
-        writer.writerow([
-            task_title,
-            entry.date,
-            start_time_str,
-            end_time_str,
-            entry.minutes,
-            round(entry.minutes / 60, 2),
-            entry.note or ""
-        ])
-    writer.writerow([])
-
-    # Summary section
-    writer.writerow(["WEEKLY SUMMARY"])
-    writer.writerow(["Project", "Task", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Total"])
-    for project_name, tasks_data in summary.items():
-        for task_name, days in tasks_data.items():
-            writer.writerow([
-                project_name,
-                task_name,
-                days.get('Mon', '-'),
-                days.get('Tue', '-'),
-                days.get('Wed', '-'),
-                days.get('Thu', '-'),
-                days.get('Fri', '-'),
-                days.get('Sat', '-'),
-                days.get('Sun', '-'),
-                days.get('Total', 0)
-            ])
-
-    # Prepare response
-    output.seek(0)
-    filename = f"notetime_week_{week.start_date}.csv"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
-
-
 # ============================================
 # Project Endpoints
 # ============================================
 
 @app.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-def create_project(name: str = Form(None), is_active: bool = Form(True), db: Session = Depends(get_db)):
+def create_project(
+    name: str,
+    is_active: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Create a new project (form data).
+    Create a new project.
 
     Args:
-        name: Project name (must be unique)
+        name: Project name (must be unique per user)
         is_active: Whether project is active (default: True)
 
     Returns:
         Created project with ID
 
     Raises:
-        400: If project with this name already exists
+        400: If project with this name already exists for this user
     """
-    # Check if project already exists
+    # Check if project already exists for this user
     existing = db.scalars(
-        select(Project).where(Project.name == name)
+        select(Project).where(
+            Project.name == name,
+            Project.user_id == current_user.id
+        )
     ).first()
 
     if existing:
@@ -922,50 +1016,7 @@ def create_project(name: str = Form(None), is_active: bool = Form(True), db: Ses
         )
 
     # Create project
-    db_project = Project(name=name, is_active=is_active)
-    db.add(db_project)
-    db.commit()
-    db.refresh(db_project)
-
-    return db_project
-
-
-@app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project_api(project: dict, db: Session = Depends(get_db)):
-    """
-    Create a new project (JSON body).
-
-    Args:
-        project: JSON with name and is_active fields
-
-    Returns:
-        Created project with ID
-
-    Raises:
-        400: If project with this name already exists
-    """
-    name = project.get("name")
-    is_active = project.get("is_active", True)
-
-    if not name:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Project name is required"
-        )
-
-    # Check if project already exists
-    existing = db.scalars(
-        select(Project).where(Project.name == name)
-    ).first()
-
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Project '{name}' already exists"
-        )
-
-    # Create project
-    db_project = Project(name=name, is_active=is_active)
+    db_project = Project(name=name, is_active=is_active, user_id=current_user.id)
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
@@ -974,17 +1025,21 @@ async def create_project_api(project: dict, db: Session = Depends(get_db)):
 
 
 @app.get("/projects", response_model=List[ProjectResponse])
-def list_projects(active_only: bool = True, db: Session = Depends(get_db)):
+def list_projects(
+    active_only: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    List all projects.
+    List all projects for the authenticated user.
 
     Args:
         active_only: If True, only return active projects (default: True)
 
     Returns:
-        List of projects
+        List of projects belonging to the user
     """
-    query = select(Project)
+    query = select(Project).where(Project.user_id == current_user.id)
     if active_only:
         query = query.where(Project.is_active == True)
 
@@ -992,20 +1047,12 @@ def list_projects(active_only: bool = True, db: Session = Depends(get_db)):
     return projects
 
 
-@app.get("/projects/manage", response_class=HTMLResponse)
-async def projects_management(request: Request, db: Session = Depends(get_db)):
-    """Serve projects management page"""
-    # Get all projects (both active and inactive)
-    all_projects = db.scalars(select(Project).order_by(Project.is_active.desc(), Project.name)).all()
-
-    return templates.TemplateResponse("projects.html", {
-        "request": request,
-        "projects": all_projects
-    })
-
-
 @app.get("/projects/{project_id}", response_model=ProjectResponse)
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Get a specific project by ID.
 
@@ -1016,85 +1063,16 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
         Project details
 
     Raises:
-        404: If project not found
+        404: If project not found or doesn't belong to user
     """
     project = db.get(Project, project_id)
-    if not project:
+    if not project or project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Project with id {project_id} not found"
         )
 
     return project
-
-
-@app.put("/api/projects/{project_id}", response_model=ProjectResponse)
-def update_project(
-    project_id: int,
-    project_update: ProjectUpdate = None,
-    is_active: bool = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Update a project's name and/or status.
-
-    Args:
-        project_id: ID of project to update
-        project_update: Project update data (for JSON body)
-        is_active: New active status (for query param, legacy support)
-
-    Returns:
-        Updated project
-
-    Raises:
-        404: If project not found
-    """
-    project = db.get(Project, project_id)
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project with id {project_id} not found"
-        )
-
-    # Handle both JSON body and query param for backwards compatibility
-    if project_update:
-        if project_update.name is not None:
-            project.name = project_update.name
-        if project_update.is_active is not None:
-            project.is_active = project_update.is_active
-    elif is_active is not None:
-        # Legacy query param support
-        project.is_active = is_active
-
-    db.commit()
-    db.refresh(project)
-
-    return project
-
-
-@app.delete("/api/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: int, db: Session = Depends(get_db)):
-    """
-    Delete a project and all associated tasks (cascade delete).
-
-    Args:
-        project_id: ID of project to delete
-
-    Raises:
-        404: If project not found
-    """
-    project = db.get(Project, project_id)
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project with id {project_id} not found"
-        )
-
-    # Cascade delete will automatically delete all tasks associated with this project
-    db.delete(project)
-    db.commit()
-
-    return None
 
 
 # ============================================
@@ -1102,131 +1080,66 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
 # ============================================
 
 @app.get("/", response_class=HTMLResponse)
-async def weekly_view(request: Request, db: Session = Depends(get_db)):
+async def weekly_view(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Serve the weekly HTML page (current week).
 
     This is the main web interface.
     """
-    # Get or create current week
+    # Get or create current week for this user
     today = date.today()
     days_since_monday = today.weekday()
     week_start = today - timedelta(days=days_since_monday)
 
     week = db.scalars(
-        select(Week).where(Week.start_date == week_start)
+        select(Week).where(
+            Week.start_date == week_start,
+            Week.user_id == current_user.id
+        )
     ).first()
 
     if not week:
-        week = Week(start_date=week_start)
+        week = Week(start_date=week_start, user_id=current_user.id)
         db.add(week)
         db.commit()
         db.refresh(week)
 
     # Get weekly data
-    weekly_data = get_week(week.id, db)
-
-    # Get all projects (for PM section)
-    all_projects = db.scalars(select(Project).where(Project.is_active == True).order_by(Project.name)).all()
-
-    # Get all tasks for PM section (organized by project, sorted by sort_order)
-    all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
-
-    # Filter weekly tasks to P1-P3 (exclude P0)
-    priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
-
-    # Create chronological timeline (mix tasks and work entries)
-    timeline = []
-
-    # Add tasks with creation assumption (use today for active, completion date for done)
-    for task in weekly_data.tasks:
-        timeline.append({
-            "type": "task",
-            "date": today,  # Tasks show on today by default
-            "time": None,
-            "data": task
-        })
-
-    # Add work entries
-    for entry in weekly_data.work_entries:
-        timeline.append({
-            "type": "log",
-            "date": entry.date,
-            "time": entry.start_time,
-            "data": entry
-        })
-
-    # Sort by date, then time
-    timeline.sort(key=lambda x: (
-        x["date"],
-        x["time"] if x["time"] else datetime.min.time()
-    ))
+    weekly_data = get_week(week.id, current_user, db)
 
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": priority_tasks,  # P1-P3 tasks for weekly section
+        "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
-        "timeline": timeline,
-        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],  # Convert to dicts for JSON
-        "all_tasks": all_tasks  # All tasks for PM section
+        "user": current_user
     })
 
 
 @app.get("/weeks/{week_id}/page", response_class=HTMLResponse)
-async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depends(get_db)):
+async def weekly_view_by_id(
+    request: Request,
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Serve weekly page for a specific week"""
-    weekly_data = get_week(week_id, db)
-
-    # Get all projects (for PM section)
-    all_projects = db.scalars(select(Project).where(Project.is_active == True).order_by(Project.name)).all()
-
-    # Get all tasks for PM section (organized by project, sorted by sort_order)
-    all_tasks = db.scalars(select(Task).order_by(Task.sort_order, Task.id)).all()
-
-    # Filter weekly tasks to P1-P3 (exclude P0)
-    priority_tasks = [t for t in weekly_data.tasks if t.priority >= 1 and t.priority <= 3]
-
-    # Create chronological timeline (mix tasks and work entries)
-    timeline = []
-    today = date.today()
-
-    # Add tasks
-    for task in weekly_data.tasks:
-        timeline.append({
-            "type": "task",
-            "date": today,
-            "time": None,
-            "data": task
-        })
-
-    # Add work entries
-    for entry in weekly_data.work_entries:
-        timeline.append({
-            "type": "log",
-            "date": entry.date,
-            "time": entry.start_time,
-            "data": entry
-        })
-
-    # Sort by date, then time
-    timeline.sort(key=lambda x: (
-        x["date"],
-        x["time"] if x["time"] else datetime.min.time()
-    ))
+    weekly_data = get_week(week_id, current_user, db)
 
     return templates.TemplateResponse("weekly.html", {
         "request": request,
         "week": weekly_data.week,
-        "tasks": priority_tasks,  # P1-P3 tasks for weekly section
+        "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
-        "timeline": timeline,
-        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],  # Convert to dicts for JSON
-        "all_tasks": all_tasks  # All tasks for PM section
+        "user": current_user
     })
 
 
@@ -1234,28 +1147,81 @@ async def weekly_view_by_id(request: Request, week_id: int, db: Session = Depend
 # HTMX Partial Routes
 # ============================================
 
+@app.post("/htmx/tasks", response_model=TaskResponse)
+async def create_task_htmx(
+    title: str = Form(...),
+    week_id: int = Form(...),
+    state: str = Form("active"),
+    priority: int = Form(3),
+    project_id: Optional[int] = Form(None),
+    delegate: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new task from HTMX form (accepts form data)."""
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Week with id {week_id} not found")
+
+    if project_id is not None:
+        project = db.get(Project, project_id)
+        if not project or project.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Project with id {project_id} not found")
+
+    db_task = Task(title=title, week_id=week_id, state=state, priority=priority, project_id=project_id, delegate=delegate)
+    db.add(db_task)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
+
+
+@app.post("/htmx/work_entries", response_model=WorkEntryResponse)
+async def create_work_entry_htmx(
+    task_id: int = Form(...),
+    date: date = Form(...),
+    minutes: int = Form(...),
+    note: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new work entry from HTMX form (accepts form data)."""
+    if minutes <= 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Minutes must be positive")
+
+    task = db.get(Task, task_id)
+    if not task or task.week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task with id {task_id} not found")
+
+    db_entry = WorkEntry(task_id=task_id, date=date, minutes=minutes, note=note)
+    db.add(db_entry)
+    db.commit()
+    db.refresh(db_entry)
+    return db_entry
+
+
 @app.get("/partials/task-form", response_class=HTMLResponse)
-async def task_form_partial(request: Request, week_id: int, db: Session = Depends(get_db)):
+async def task_form_partial(
+    request: Request,
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Return task creation form (HTMX partial)"""
-    import json
-    projects = db.scalars(select(Project).where(Project.is_active == True)).all()
-    projects_json = json.dumps([{"id": p.id, "name": p.name} for p in projects])
+    projects = db.scalars(
+        select(Project).where(
+            Project.is_active == True,
+            Project.user_id == current_user.id
+        )
+    ).all()
 
     html = f"""
-    <form hx-post="/api/tasks" hx-target="#add-task-container" id="task-form">
+    <form hx-post="/htmx/tasks" hx-target="#add-task-container">
         <input type="hidden" name="week_id" value="{week_id}">
         <input type="text" name="title" placeholder="Task title" required>
-
-        <div class="project-input-container">
-            <input
-                type="text"
-                id="project-search"
-                placeholder="Type to search or create project..."
-                autocomplete="off">
-            <input type="hidden" name="project_id" id="project-id-field" value="">
-            <div id="project-dropdown" class="project-dropdown hidden"></div>
-        </div>
-
+        <select name="project_id">
+            <option value="">No project</option>
+            {"".join(f'<option value="{p.id}">{p.name}</option>' for p in projects)}
+        </select>
         <select name="priority">
             <option value="1">Priority 1 (High)</option>
             <option value="2">Priority 2</option>
@@ -1264,224 +1230,6 @@ async def task_form_partial(request: Request, week_id: int, db: Session = Depend
         <button type="submit">Add Task</button>
         <button type="button" hx-get="/partials/task-form-cancel" hx-target="#add-task-container">Cancel</button>
     </form>
-
-    <!-- Project creation dialog -->
-    <div id="project-create-dialog" class="dialog-hidden">
-        <div class="dialog-overlay"></div>
-        <div class="dialog-content">
-            <h3>Create New Project?</h3>
-            <p>Project "<span id="new-project-name"></span>" doesn't exist.</p>
-            <p><kbd>Enter</kbd> to create &nbsp;|&nbsp; <kbd>Tab</kbd> to edit name &nbsp;|&nbsp; <kbd>Esc</kbd> to cancel</p>
-            <input type="text" id="edit-project-name" class="edit-name-hidden">
-            <div class="dialog-actions">
-                <button id="confirm-create-project" class="btn-primary">Create Project</button>
-                <button id="cancel-create-project">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const projects = {projects_json};
-        const projectSearch = document.getElementById('project-search');
-        const projectIdField = document.getElementById('project-id-field');
-        const dropdown = document.getElementById('project-dropdown');
-        const dialog = document.getElementById('project-create-dialog');
-        const newProjectNameSpan = document.getElementById('new-project-name');
-        const editProjectNameInput = document.getElementById('edit-project-name');
-        const confirmBtn = document.getElementById('confirm-create-project');
-        const cancelBtn = document.getElementById('cancel-create-project');
-
-        let pendingProjectName = '';
-        let editMode = false;
-        let filteredProjects = [];
-        let selectedIndex = -1;
-
-        // Show all projects on focus
-        projectSearch.addEventListener('focus', function() {{
-            showDropdown('');
-        }});
-
-        // Filter projects on input
-        projectSearch.addEventListener('input', function() {{
-            const value = this.value.trim();
-            showDropdown(value);
-
-            // Update hidden field if exact match
-            const match = projects.find(p => p.name.toLowerCase() === value.toLowerCase());
-            projectIdField.value = match ? match.id : '';
-        }});
-
-        // Handle keyboard navigation
-        projectSearch.addEventListener('keydown', function(e) {{
-            if (e.key === 'ArrowDown') {{
-                e.preventDefault();
-                selectedIndex = Math.min(selectedIndex + 1, filteredProjects.length - 1);
-                highlightItem();
-            }} else if (e.key === 'ArrowUp') {{
-                e.preventDefault();
-                selectedIndex = Math.max(selectedIndex - 1, -1);
-                highlightItem();
-            }} else if (e.key === 'Tab') {{
-                // Auto-complete to first match
-                if (filteredProjects.length > 0 && selectedIndex === -1) {{
-                    e.preventDefault();
-                    selectProject(filteredProjects[0]);
-                }} else if (selectedIndex >= 0) {{
-                    e.preventDefault();
-                    selectProject(filteredProjects[selectedIndex]);
-                }}
-            }} else if (e.key === 'Enter') {{
-                e.preventDefault();
-
-                if (selectedIndex >= 0) {{
-                    // Select highlighted item
-                    selectProject(filteredProjects[selectedIndex]);
-                }} else {{
-                    const value = this.value.trim();
-                    if (!value) return;
-
-                    // Check if exact match exists
-                    const match = projects.find(p => p.name.toLowerCase() === value.toLowerCase());
-
-                    if (!match) {{
-                        // Show create dialog
-                        hideDropdown();
-                        pendingProjectName = value;
-                        newProjectNameSpan.textContent = value;
-                        dialog.classList.remove('dialog-hidden');
-                        editMode = false;
-                        editProjectNameInput.classList.add('edit-name-hidden');
-                        newProjectNameSpan.style.display = 'inline';
-                        confirmBtn.focus();
-                    }}
-                }}
-            }} else if (e.key === 'Escape') {{
-                hideDropdown();
-            }}
-        }});
-
-        // Hide dropdown when clicking outside
-        document.addEventListener('click', function(e) {{
-            if (!projectSearch.contains(e.target) && !dropdown.contains(e.target)) {{
-                hideDropdown();
-            }}
-        }});
-
-        function showDropdown(filter) {{
-            filter = filter.toLowerCase();
-
-            // Filter projects
-            filteredProjects = filter
-                ? projects.filter(p => p.name.toLowerCase().includes(filter))
-                : [...projects];
-
-            selectedIndex = -1;
-
-            if (filteredProjects.length === 0) {{
-                dropdown.innerHTML = '<div class="dropdown-item empty">No matching projects</div>';
-            }} else {{
-                dropdown.innerHTML = filteredProjects.map((p, i) =>
-                    `<div class="dropdown-item" data-index="${{i}}">${{p.name}}</div>`
-                ).join('');
-
-                // Add click handlers
-                dropdown.querySelectorAll('.dropdown-item').forEach(item => {{
-                    item.addEventListener('click', function() {{
-                        const index = parseInt(this.dataset.index);
-                        selectProject(filteredProjects[index]);
-                    }});
-                }});
-            }}
-
-            dropdown.classList.remove('hidden');
-        }}
-
-        function hideDropdown() {{
-            dropdown.classList.add('hidden');
-            selectedIndex = -1;
-        }}
-
-        function highlightItem() {{
-            dropdown.querySelectorAll('.dropdown-item').forEach((item, i) => {{
-                item.classList.toggle('highlighted', i === selectedIndex);
-            }});
-        }}
-
-        function selectProject(project) {{
-            projectSearch.value = project.name;
-            projectIdField.value = project.id;
-            hideDropdown();
-            document.querySelector('[name="priority"]').focus();
-        }}
-
-        // Dialog keyboard navigation (unchanged)
-        dialog.addEventListener('keydown', function(e) {{
-            if (e.key === 'Escape') {{
-                e.preventDefault();
-                closeDialog();
-            }} else if (e.key === 'Enter' && !editMode) {{
-                e.preventDefault();
-                createProject();
-            }} else if (e.key === 'Tab' && !editMode && e.target === confirmBtn) {{
-                e.preventDefault();
-                editMode = true;
-                editProjectNameInput.value = pendingProjectName;
-                editProjectNameInput.classList.remove('edit-name-hidden');
-                newProjectNameSpan.style.display = 'none';
-                editProjectNameInput.focus();
-                editProjectNameInput.select();
-            }}
-        }});
-
-        editProjectNameInput.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter') {{
-                e.preventDefault();
-                pendingProjectName = this.value.trim();
-                createProject();
-            }} else if (e.key === 'Tab') {{
-                e.preventDefault();
-                closeDialog();
-            }}
-        }});
-
-        confirmBtn.addEventListener('click', createProject);
-        cancelBtn.addEventListener('click', closeDialog);
-
-        async function createProject() {{
-            if (!pendingProjectName) return;
-
-            try {{
-                const response = await fetch('/api/projects', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        name: pendingProjectName,
-                        is_active: true
-                    }})
-                }});
-
-                if (response.ok) {{
-                    const newProject = await response.json();
-                    projects.push(newProject);
-                    projectSearch.value = newProject.name;
-                    projectIdField.value = newProject.id;
-                    closeDialog();
-                    document.querySelector('[name="priority"]').focus();
-                }}
-            }} catch (error) {{
-                console.error('Error creating project:', error);
-                alert('Failed to create project');
-            }}
-        }}
-
-        function closeDialog() {{
-            dialog.classList.add('dialog-hidden');
-            editMode = false;
-            editProjectNameInput.classList.add('edit-name-hidden');
-            newProjectNameSpan.style.display = 'inline';
-            projectSearch.focus();
-        }}
-    </script>
     """
     return HTMLResponse(content=html)
 
@@ -1494,172 +1242,32 @@ async def task_form_cancel():
 
 
 @app.get("/partials/log-form", response_class=HTMLResponse)
-async def log_form_partial(request: Request, week_id: int, db: Session = Depends(get_db)):
+async def log_form_partial(
+    request: Request,
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Return work entry form (HTMX partial)"""
+    # Verify week belongs to user
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Week not found")
+
     tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
 
     html = f"""
-    <form hx-post="/api/work_entries" hx-target="#add-log-container" id="log-time-form">
+    <form hx-post="/htmx/work_entries" hx-target="#add-log-container">
         <select name="task_id" required>
             <option value="">Select task...</option>
             {"".join(f'<option value="{t.id}">{t.title}</option>' for t in tasks)}
         </select>
         <input type="date" name="date" value="{date.today()}" required>
-
-        <div class="time-entry-group">
-            <label>Option 1: Enter time range (e.g., type "9" for 09:00)</label>
-            <div class="time-inputs">
-                <input type="text"
-                       id="start_time_display"
-                       placeholder="Start (e.g., 9 or 9:30)"
-                       autocomplete="off">
-                <input type="hidden" name="start_time" id="start_time">
-                <span>to</span>
-                <input type="text"
-                       id="end_time_display"
-                       placeholder="End (e.g., 17 or 17:30)"
-                       autocomplete="off">
-                <input type="hidden" name="end_time" id="end_time">
-            </div>
-        </div>
-
-        <div class="time-entry-group">
-            <label>Option 2: Enter duration directly</label>
-            <input type="number" name="minutes" id="minutes" placeholder="Minutes worked" min="1">
-        </div>
-
+        <input type="number" name="minutes" placeholder="Minutes worked" min="1" required>
         <textarea name="note" placeholder="Note (optional)" rows="2"></textarea>
         <button type="submit">Log Time</button>
         <button type="button" hx-get="/partials/log-form-cancel" hx-target="#add-log-container">Cancel</button>
     </form>
-    <script>
-        const startDisplay = document.getElementById('start_time_display');
-        const endDisplay = document.getElementById('end_time_display');
-        const startHidden = document.getElementById('start_time');
-        const endHidden = document.getElementById('end_time');
-        const minutesInput = document.getElementById('minutes');
-
-        // Smart time formatting function
-        function formatTimeInput(input) {{
-            let value = input.value.trim();
-            if (!value) return '';
-
-            // Remove any non-digit/colon characters
-            value = value.replace(/[^0-9:]/g, '');
-
-            // If just a number (no colon)
-            if (!value.includes(':')) {{
-                // Handle formats like 930 (9:30), 1430 (14:30), or just 9 (9:00)
-                if (value.length === 3 || value.length === 4) {{
-                    // Parse as HHMM or HMM
-                    let hour, minute;
-                    if (value.length === 3) {{
-                        // HMM format (e.g., 930 = 9:30)
-                        hour = parseInt(value.substring(0, 1));
-                        minute = parseInt(value.substring(1, 3));
-                    }} else {{
-                        // HHMM format (e.g., 1430 = 14:30)
-                        hour = parseInt(value.substring(0, 2));
-                        minute = parseInt(value.substring(2, 4));
-                    }}
-
-                    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {{
-                        return hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0');
-                    }}
-                }}
-
-                // Single or double digit hour only
-                let hour = parseInt(value);
-                if (isNaN(hour)) return '';
-
-                // Default to :00 minutes
-                if (hour >= 0 && hour <= 23) {{
-                    return hour.toString().padStart(2, '0') + ':00';
-                }}
-                return '';
-            }}
-
-            // If has colon, parse hour:minute
-            const parts = value.split(':');
-            let hour = parseInt(parts[0]);
-            let minute = parseInt(parts[1]) || 0;
-
-            if (isNaN(hour) || hour < 0 || hour > 23) return '';
-            if (isNaN(minute) || minute < 0 || minute > 59) minute = 0;
-
-            return hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0');
-        }}
-
-        // Handle blur events to format time
-        startDisplay.addEventListener('blur', function() {{
-            const formatted = formatTimeInput(this);
-            if (formatted) {{
-                this.value = formatted;
-                startHidden.value = formatted;
-                calculateDuration();
-            }}
-        }});
-
-        endDisplay.addEventListener('blur', function() {{
-            const formatted = formatTimeInput(this);
-            if (formatted) {{
-                this.value = formatted;
-                endHidden.value = formatted;
-                calculateDuration();
-            }}
-        }});
-
-        // Handle Enter key for quick formatting
-        startDisplay.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === 'Tab') {{
-                const formatted = formatTimeInput(this);
-                if (formatted) {{
-                    this.value = formatted;
-                    startHidden.value = formatted;
-                    calculateDuration();
-                }}
-            }}
-        }});
-
-        endDisplay.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === 'Tab') {{
-                const formatted = formatTimeInput(this);
-                if (formatted) {{
-                    this.value = formatted;
-                    endHidden.value = formatted;
-                    calculateDuration();
-                }}
-            }}
-        }});
-
-        function calculateDuration() {{
-            if (startHidden.value && endHidden.value) {{
-                const start = startHidden.value.split(':');
-                const end = endHidden.value.split(':');
-                const startMins = parseInt(start[0]) * 60 + parseInt(start[1]);
-                const endMins = parseInt(end[0]) * 60 + parseInt(end[1]);
-                const duration = endMins - startMins;
-
-                if (duration > 0) {{
-                    minutesInput.value = duration;
-                    minutesInput.readOnly = true;
-                }} else {{
-                    minutesInput.readOnly = false;
-                }}
-            }} else {{
-                minutesInput.readOnly = false;
-            }}
-        }}
-
-        minutesInput.addEventListener('input', function() {{
-            if (this.value) {{
-                startDisplay.value = '';
-                endDisplay.value = '';
-                startHidden.value = '';
-                endHidden.value = '';
-            }}
-        }});
-    </script>
     """
     return HTMLResponse(content=html)
 
@@ -1676,116 +1284,169 @@ async def log_form_cancel():
 # ============================================
 
 @app.put("/api/tasks/{task_id}/complete", response_class=HTMLResponse)
-async def complete_task(task_id: int, db: Session = Depends(get_db)):
-    """Mark task as completed and set priority to P0"""
+async def complete_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark task as completed (HTMX action)"""
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.week.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Task not found")
 
     task.state = TaskState.COMPLETED.value
-    task.priority = 0  # Set to P0 when completed
     db.commit()
 
     # Return updated task HTML
     return HTMLResponse(content=f'<div class="task-item task-completed">✓ {task.title} (Completed)</div>')
 
 
-@app.put("/api/tasks/{task_id}/uncomplete", response_class=HTMLResponse)
-async def uncomplete_task(task_id: int, db: Session = Depends(get_db)):
-    """Mark task as active (uncomplete)"""
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    task.state = TaskState.ACTIVE.value
-    db.commit()
-
-    # Return updated task HTML
-    return HTMLResponse(content=f'<div class="task-item task-active">{task.title}</div>')
-
-
 @app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)
-async def defer_task(task_id: int, db: Session = Depends(get_db)):
-    """Set task state to 'waiting' (HTMX action)"""
+async def defer_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark task for deferral (HTMX action)"""
+    # In a full implementation, this would rollover to next week
+    # For now, just mark it visually
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.week.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    task.state = TaskState.WAITING.value
-    db.commit()
-
-    # Return updated task HTML
-    return HTMLResponse(content=f'<div class="task-item task-waiting">⏸ {task.title} (Waiting)</div>')
+    return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')
 
 
 # ============================================
-# Day 12: Task Movement & Ordering
+# Feedback
 # ============================================
 
-@app.post("/api/tasks/{task_id}/move-up")
-async def move_task_up(task_id: int, db: Session = Depends(get_db)):
-    """Move task up in sort order"""
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+VALID_CATEGORIES = {"bug_report", "feature_request", "general", "ui_ux", "performance"}
+VALID_SEVERITIES = {"critical", "high", "medium", "low", ""}
+VALID_REPRODUCIBILITY = {"always", "sometimes", "rarely", "na", ""}
 
-    # Get sibling tasks (same project, same parent)
-    siblings_query = select(Task).where(
-        Task.project_id == task.project_id,
-        Task.parent_task_id == task.parent_task_id
-    ).order_by(Task.sort_order, Task.id)
 
-    siblings = list(db.scalars(siblings_query).all())
+@app.get("/feedback", response_class=HTMLResponse)
+async def feedback_form(
+    request: Request,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    """Render the beta feedback form."""
+    return templates.TemplateResponse(
+        "feedback.html",
+        {"request": request, "current_user": current_user, "success": False, "error": None},
+    )
 
-    # Find current position
-    try:
-        current_idx = siblings.index(task)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Task not found in siblings")
 
-    # Can't move up if already first
-    if current_idx == 0:
-        return {"status": "already_first"}
+@app.post("/feedback", response_class=HTMLResponse)
+async def submit_feedback_form(
+    request: Request,
+    category: str = Form(...),
+    title: str = Form(...),
+    description: str = Form(...),
+    rating: Optional[str] = Form(None),
+    contact_email: Optional[str] = Form(None),
+    browser_info: Optional[str] = Form(None),
+    reproducibility: Optional[str] = Form(None),
+    severity: Optional[str] = Form(None),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Handle beta feedback form submission."""
+    # Validate
+    if category not in VALID_CATEGORIES:
+        return templates.TemplateResponse(
+            "feedback.html",
+            {"request": request, "current_user": current_user, "success": False,
+             "error": "Please select a valid feedback category."},
+            status_code=422,
+        )
+    title = title.strip()
+    description = description.strip()
+    if not title or len(title) > 200:
+        return templates.TemplateResponse(
+            "feedback.html",
+            {"request": request, "current_user": current_user, "success": False,
+             "error": "Title is required and must be 200 characters or fewer."},
+            status_code=422,
+        )
+    if not description:
+        return templates.TemplateResponse(
+            "feedback.html",
+            {"request": request, "current_user": current_user, "success": False,
+             "error": "Description is required."},
+            status_code=422,
+        )
 
-    # Swap sort_order with previous sibling
-    prev_task = siblings[current_idx - 1]
-    task.sort_order, prev_task.sort_order = prev_task.sort_order, task.sort_order
+    # Parse optional fields
+    rating_int: Optional[int] = None
+    if rating:
+        try:
+            rating_int = int(rating)
+            if not (1 <= rating_int <= 5):
+                rating_int = None
+        except ValueError:
+            rating_int = None
 
+    severity_val = severity if severity in VALID_SEVERITIES - {""} else None
+    repro_val = reproducibility if reproducibility in VALID_REPRODUCIBILITY - {""} else None
+    contact = contact_email.strip() if contact_email and contact_email.strip() else None
+    browser = browser_info.strip() if browser_info and browser_info.strip() else None
+
+    feedback = Feedback(
+        user_id=current_user.id if current_user else None,
+        category=category,
+        title=title,
+        description=description,
+        rating=rating_int,
+        contact_email=contact,
+        browser_info=browser,
+        reproducibility=repro_val,
+        severity=severity_val,
+    )
+    db.add(feedback)
     db.commit()
-    return {"status": "success"}
+
+    return templates.TemplateResponse(
+        "feedback.html",
+        {"request": request, "current_user": current_user, "success": True, "error": None},
+    )
 
 
-@app.post("/api/tasks/{task_id}/move-down")
-async def move_task_down(task_id: int, db: Session = Depends(get_db)):
-    """Move task down in sort order"""
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Get sibling tasks (same project, same parent)
-    siblings_query = select(Task).where(
-        Task.project_id == task.project_id,
-        Task.parent_task_id == task.parent_task_id
-    ).order_by(Task.sort_order, Task.id)
-
-    siblings = list(db.scalars(siblings_query).all())
-
-    # Find current position
-    try:
-        current_idx = siblings.index(task)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Task not found in siblings")
-
-    # Can't move down if already last
-    if current_idx >= len(siblings) - 1:
-        return {"status": "already_last"}
-
-    # Swap sort_order with next sibling
-    next_task = siblings[current_idx + 1]
-    task.sort_order, next_task.sort_order = next_task.sort_order, task.sort_order
-
+@app.post("/api/feedback", response_model=FeedbackResponse, status_code=201)
+async def submit_feedback_api(
+    payload: FeedbackCreate,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Submit feedback via JSON API."""
+    feedback = Feedback(
+        user_id=current_user.id if current_user else None,
+        category=payload.category,
+        title=payload.title,
+        description=payload.description,
+        rating=payload.rating,
+        contact_email=payload.contact_email,
+        browser_info=payload.browser_info,
+        reproducibility=payload.reproducibility,
+        severity=payload.severity,
+    )
+    db.add(feedback)
     db.commit()
-    return {"status": "success"}
+    db.refresh(feedback)
+    return feedback
+
+
+@app.get("/api/feedback", response_model=List[FeedbackResponse])
+async def list_feedback(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List feedback submitted by the current user."""
+    entries = db.execute(
+        select(Feedback).where(Feedback.user_id == current_user.id).order_by(Feedback.submitted_at.desc())
+    ).scalars().all()
+    return entries
 
 
 # ============================================

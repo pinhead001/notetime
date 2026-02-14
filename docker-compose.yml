@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # PostgreSQL Database
   db:
@@ -5,7 +7,7 @@ services:
     container_name: notetime-db
     environment:
       POSTGRES_USER: notetime
-      POSTGRES_PASSWORD: notetime
+      POSTGRES_PASSWORD: notetime_dev_password
       POSTGRES_DB: notetime
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -17,25 +19,27 @@ services:
       timeout: 5s
       retries: 5
 
-  # Notetime Application
+  # FastAPI Web Application
   web:
-    build: .  # Build locally from Dockerfile
-    # Or use pre-built image from GitHub Container Registry:
-    # image: ghcr.io/pinhead001/notetime:latest
-    container_name: notetime-app
+    build: .
+    container_name: notetime-web
     environment:
-      DATABASE_URL: postgresql://notetime:notetime@db:5432/notetime
-      ENVIRONMENT: production
+      # Database connection
+      DATABASE_URL: postgresql://notetime:notetime_dev_password@db:5432/notetime
+      # JWT settings
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
     ports:
       - "8000:8000"
+    volumes:
+      # Mount source code for hot reload during development
+      - .:/app
+      # Don't override the installed packages
+      - /app/__pycache__
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      # Mount code for development (comment out for production)
-      - ./notetime:/app/notetime
-      - ./templates:/app/templates
-      - ./static:/app/static
     command: uvicorn notetime.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:

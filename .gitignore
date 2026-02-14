@@ -5,6 +5,7 @@ __pycache__/
 notetime.db
 test.db
 *.db
+todo.txt
 
 # Docker
 backup.sql

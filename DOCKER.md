@@ -1,313 +1,355 @@
-# Docker Setup for Notetime
+# Docker Deployment Guide for Notetime
 
-This guide explains how to build and run Notetime using Docker and Docker Compose.
+This guide provides instructions for running Notetime locally using Docker and Docker Compose.
 
 ## Prerequisites
 
-- Docker Engine 20.10+
-- Docker Compose 2.0+
+- [Docker](https://docs.docker.com/get-docker/) (version 20.10 or later)
+- [Docker Compose](https://docs.docker.com/compose/install/) (version 2.0 or later)
+
+To verify your installation:
+```bash
+docker --version
+docker-compose --version
+```
 
 ## Quick Start
 
-### 1. Build and Run with Docker Compose
+### 1. Clone and Navigate to the Repository
 
 ```bash
-# Build and start all services (PostgreSQL + Notetime)
-docker-compose up --build
+cd /path/to/notetime
+```
 
-# Or run in detached mode
+### 2. Configure Environment Variables (Optional)
+
+Copy the example environment file:
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to customize settings (optional for local development):
+- `SECRET_KEY`: JWT secret key (auto-generated default is fine for local dev)
+- `DATABASE_URL`: Already configured for Docker PostgreSQL
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: Token expiration time
+
+### 3. Start the Application
+
+Build and start all services:
+```bash
+docker-compose up --build
+```
+
+Or run in detached mode (background):
+```bash
 docker-compose up -d --build
 ```
 
-The application will be available at: **http://localhost:8000**
+### 4. Initialize the Database
 
-### 2. Stop Services
-
+On first run, initialize the database with sample data:
 ```bash
-# Stop and remove containers
+docker-compose exec web python -m notetime.seed
+```
+
+### 5. Access the Application
+
+- **Web Interface**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+## Docker Architecture
+
+The setup includes two services:
+
+### 1. **PostgreSQL Database** (`db` service)
+- Image: `postgres:15-alpine`
+- Port: `5432` (mapped to host)
+- Database: `notetime`
+- User: `notetime`
+- Password: `notetime_dev_password`
+- Data persistence: `postgres_data` volume
+
+### 2. **FastAPI Web Application** (`web` service)
+- Built from local `Dockerfile`
+- Port: `8000` (mapped to host)
+- Hot reload enabled for development
+- Waits for database to be healthy before starting
+
+## Common Commands
+
+### Start Services
+```bash
+# Start in foreground (see logs)
+docker-compose up
+
+# Start in background
+docker-compose up -d
+
+# Rebuild and start
+docker-compose up --build
+```
+
+### Stop Services
+```bash
+# Stop containers (preserves data)
+docker-compose stop
+
+# Stop and remove containers (preserves volumes)
 docker-compose down
 
-# Stop and remove containers + volumes (WARNING: deletes all data)
+# Stop, remove containers AND volumes (deletes data)
 docker-compose down -v
 ```
 
-## Configuration
-
-### Environment Variables
-
-The application uses the following environment variables (configured in `docker-compose.yml`):
-
-- `DATABASE_URL`: PostgreSQL connection string (default: `postgresql://notetime:notetime@db:5432/notetime`)
-- `ENVIRONMENT`: Application environment (default: `production`)
-
-### Database
-
-- **Database**: PostgreSQL 15
-- **Default Credentials**:
-  - User: `notetime`
-  - Password: `notetime`
-  - Database: `notetime`
-  - Port: `5432`
-
-**⚠️ For production, change these credentials!**
-
-### Ports
-
-- Web Application: `8000`
-- PostgreSQL Database: `5432`
-
-## Development Mode
-
-The `docker-compose.yml` is configured for development with:
-- Hot reload enabled (`--reload`)
-- Code volumes mounted for live updates
-- Database persisted in Docker volume
-
-To make code changes:
-1. Edit files locally
-2. Uvicorn will automatically reload
-3. Refresh browser to see changes
-
-## Production Mode
-
-For production deployment:
-
-1. **Remove development volumes** from `docker-compose.yml`:
-   ```yaml
-   # Comment out or remove these lines:
-   # volumes:
-   #   - ./notetime:/app/notetime
-   #   - ./templates:/app/templates
-   #   - ./static:/app/static
-   ```
-
-2. **Remove --reload flag**:
-   ```yaml
-   command: uvicorn notetime.main:app --host 0.0.0.0 --port 8000
-   ```
-
-3. **Change database credentials** in `docker-compose.yml`
-
-4. **Build and run**:
-   ```bash
-   docker-compose up -d --build
-   ```
-
-## Manual Docker Build
-
-If you want to build and run without Docker Compose:
-
-### Build Image
-
+### View Logs
 ```bash
-docker build -t notetime:latest .
+# All services
+docker-compose logs
+
+# Follow logs (live)
+docker-compose logs -f
+
+# Specific service
+docker-compose logs web
+docker-compose logs db
 ```
 
-### Run with SQLite (Standalone)
-
+### Execute Commands in Containers
 ```bash
-docker run -d \
-  --name notetime-app \
-  -p 8000:8000 \
-  -v notetime-data:/app/data \
-  notetime:latest
-```
+# Run Python commands
+docker-compose exec web python -m notetime.seed
 
-### Run with External PostgreSQL
+# Access Python shell
+docker-compose exec web python
 
-```bash
-docker run -d \
-  --name notetime-app \
-  -p 8000:8000 \
-  -e DATABASE_URL="postgresql://user:password@host:5432/dbname" \
-  -e ENVIRONMENT="production" \
-  notetime:latest
-```
-
-## Database Management
-
-### Access PostgreSQL Container
-
-```bash
+# Access PostgreSQL
 docker-compose exec db psql -U notetime -d notetime
+
+# Access container bash
+docker-compose exec web bash
 ```
 
-### Backup Database
+### Run Tests
+```bash
+# Run all tests
+docker-compose exec web pytest
 
+# Run with coverage
+docker-compose exec web pytest --cov=notetime
+
+# Run specific test file
+docker-compose exec web pytest tests/test_time_engine.py
+```
+
+### Database Management
+
+#### Backup Database
 ```bash
 docker-compose exec db pg_dump -U notetime notetime > backup.sql
 ```
 
-### Restore Database
-
+#### Restore Database
 ```bash
 docker-compose exec -T db psql -U notetime notetime < backup.sql
 ```
 
-### Reset Database
-
+#### Reset Database
 ```bash
 # Stop services
 docker-compose down
 
-# Remove database volume
+# Remove volume
 docker volume rm notetime_postgres_data
 
-# Restart services (will create fresh database)
+# Start fresh
 docker-compose up -d
+docker-compose exec web python -m notetime.seed
+```
+
+#### Access Database Shell
+```bash
+docker-compose exec db psql -U notetime -d notetime
+```
+
+Common SQL commands:
+```sql
+-- List tables
+\dt
+
+-- Describe table
+\d tasks
+
+-- View data
+SELECT * FROM tasks LIMIT 10;
+
+-- Exit
+\q
+```
+
+## Development Workflow
+
+### Hot Reload
+
+The application supports hot reload for development. When you modify Python files:
+1. Docker Compose automatically detects changes
+2. Uvicorn reloads the application
+3. Changes are reflected immediately
+
+No need to rebuild or restart containers.
+
+### Debugging
+
+#### View Application Logs
+```bash
+docker-compose logs -f web
+```
+
+#### View Database Logs
+```bash
+docker-compose logs -f db
+```
+
+#### Check Container Status
+```bash
+docker-compose ps
+```
+
+#### Inspect Container
+```bash
+docker-compose exec web env  # View environment variables
+docker-compose exec web ls -la  # List files
 ```
 
 ## Troubleshooting
 
-### Database Connection Issues
-
-If you see database connection errors:
-
-1. **Check database is healthy**:
-   ```bash
-   docker-compose ps
-   ```
-   Look for `healthy` status on the `db` service.
-
-2. **View logs**:
-   ```bash
-   docker-compose logs db
-   docker-compose logs web
-   ```
-
-3. **Verify database URL**:
-   The app expects `DATABASE_URL` environment variable with correct PostgreSQL connection string.
-
 ### Port Already in Use
 
-If port 8000 or 5432 is already in use:
+**Error**: `Bind for 0.0.0.0:8000 failed: port is already allocated`
 
-1. **Change ports in `docker-compose.yml`**:
-   ```yaml
-   ports:
-     - "8001:8000"  # Map to different host port
-   ```
+**Solution**: Change the port mapping in `docker-compose.yml`:
+```yaml
+ports:
+  - "8001:8000"  # Use port 8001 on host
+```
 
-2. **Or stop conflicting services**:
-   ```bash
-   # Find process using port 8000
-   lsof -i :8000
-
-   # Kill the process
-   kill -9 <PID>
-   ```
-
-### Container Won't Start
-
-1. **Check logs**:
-   ```bash
-   docker-compose logs web
-   ```
-
-2. **Rebuild from scratch**:
-   ```bash
-   docker-compose down -v
-   docker-compose build --no-cache
-   docker-compose up
-   ```
-
-### File Permission Issues
-
-If you encounter permission errors with mounted volumes:
-
+Or stop the conflicting service:
 ```bash
-# Fix permissions
+# Find process using port 8000
+lsof -i :8000
+# or
+sudo netstat -tlnp | grep :8000
+
+# Kill the process
+kill -9 <PID>
+```
+
+### Database Connection Issues
+
+**Error**: `could not connect to server: Connection refused`
+
+**Solutions**:
+1. Wait for database to be healthy:
+   ```bash
+   docker-compose logs db
+   ```
+2. Restart services:
+   ```bash
+   docker-compose restart
+   ```
+
+### Permission Issues
+
+**Error**: `Permission denied` when accessing files
+
+**Solution**: Fix file permissions:
+```bash
 sudo chown -R $USER:$USER .
 ```
 
-## Testing the Build
+### Container Won't Start
 
-### 1. Basic Smoke Test
-
+**Check logs**:
 ```bash
-# Start services
-docker-compose up -d
-
-# Wait for healthy status
-sleep 10
-
-# Test application is responding
-curl http://localhost:8000/
-
-# Check API docs
-curl http://localhost:8000/docs
-
-# View logs
 docker-compose logs web
-
-# Stop services
-docker-compose down
 ```
 
-### 2. Integration Test
-
+**Common fixes**:
 ```bash
-# Start services
-docker-compose up -d
+# Rebuild without cache
+docker-compose build --no-cache
 
-# Create a week
-curl -X POST http://localhost:8000/api/weeks \
-  -H "Content-Type: application/json" \
-  -d '{"start_date": "2024-01-01"}'
-
-# Create a project
-curl -X POST http://localhost:8000/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Test Project", "is_active": true}'
-
-# Stop services
-docker-compose down
+# Remove all containers and volumes
+docker-compose down -v
+docker-compose up --build
 ```
 
-### 3. Performance Test
+### Out of Disk Space
 
+**Check Docker disk usage**:
 ```bash
-# Check resource usage
-docker stats notetime-app notetime-db
+docker system df
 ```
 
-## Health Checks
+**Clean up**:
+```bash
+# Remove unused containers, networks, images
+docker system prune
 
-The database includes a health check that verifies PostgreSQL is ready:
-- **Test**: `pg_isready -U notetime`
-- **Interval**: 10 seconds
-- **Timeout**: 5 seconds
-- **Retries**: 5
+# Remove unused volumes (WARNING: deletes data)
+docker volume prune
+```
 
-The web service waits for the database to be healthy before starting.
+## Production Considerations
 
-## Image Size Optimization
+**WARNING**: This Docker setup is optimized for local development, not production.
 
-Current setup uses `python:3.12-slim` base image for smaller size.
+For production:
+1. Use environment-specific `.env` files
+2. Change default passwords
+3. Use production-grade secret keys
+4. Enable HTTPS/TLS
+5. Configure proper logging
+6. Set up monitoring and alerts
+7. Use Docker secrets for sensitive data
+8. Consider using managed database services
+9. Implement proper backup strategies
+10. Use Docker Swarm or Kubernetes for orchestration
 
-To further optimize:
-- Use multi-stage builds
-- Use `python:3.12-alpine` (smaller but may have compatibility issues)
-- Minimize installed packages
+## Environment Variables
 
-## Security Considerations
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `DATABASE_URL` | PostgreSQL connection string | Set in docker-compose.yml | Yes |
+| `SECRET_KEY` | JWT secret key | `dev-secret-key-change-in-production` | Yes |
+| `ALGORITHM` | JWT algorithm | `HS256` | No |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiration time | `10080` (7 days) | No |
 
-For production deployment:
+## File Structure
 
-1. **Change default passwords** in `docker-compose.yml`
-2. **Use secrets management** (Docker secrets, Kubernetes secrets, etc.)
-3. **Don't expose database port** (remove `5432:5432` mapping)
-4. **Use environment files** (`.env`) for sensitive data
-5. **Enable SSL/TLS** for database connections
-6. **Run container as non-root user**
-7. **Scan images for vulnerabilities**:
-   ```bash
-   docker scan notetime:latest
-   ```
+```
+notetime/
+├── Dockerfile              # Application container definition
+├── docker-compose.yml      # Multi-container orchestration
+├── .dockerignore          # Files excluded from Docker build
+├── .env.example           # Environment variables template
+└── DOCKER.md              # This file
+```
 
 ## Additional Resources
 
 - [Docker Documentation](https://docs.docker.com/)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
 - [PostgreSQL Docker Image](https://hub.docker.com/_/postgres)
-- [FastAPI Deployment](https://fastapi.tiangolo.com/deployment/)
+- [FastAPI in Containers](https://fastapi.tiangolo.com/deployment/docker/)
+
+## Support
+
+For issues or questions:
+1. Check the troubleshooting section above
+2. Review Docker logs: `docker-compose logs`
+3. Open an issue on GitHub
+
+---
+
+**Last Updated**: 2026-02-10

@@ -1,7 +1,5 @@
 # Notetime
 
-![Docker Build](https://github.com/pinhead001/notetime/actions/workflows/docker-publish.yml/badge.svg)
-
 A notebook-style weekly task and time-tracking app.
 
 ## Core Concepts
@@ -19,25 +17,21 @@ A notebook-style weekly task and time-tracking app.
 
 ## How to run
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker (Recommended for Local Development)
 
-The easiest way to run Notetime is with Docker:
+The easiest way to run Notetime locally with PostgreSQL:
 
 ```bash
-# Pull the latest image from GitHub Container Registry
-docker pull ghcr.io/pinhead001/notetime:latest
-
-# Run with Docker Compose (includes PostgreSQL)
+# Start all services (web app + database)
 docker-compose up -d
 
-# Or run standalone with SQLite
-docker run -d -p 8000:8000 ghcr.io/pinhead001/notetime:latest
+# Initialize database with sample data
+docker-compose exec web python -m notetime.seed
 ```
 
-Then open: http://localhost:8000
+Then open your browser to: http://localhost:8000
 
-**See [DOCKER.md](DOCKER.md) for complete Docker documentation**
-**Windows users:** See [DOCKER-WINDOWS.md](DOCKER-WINDOWS.md)
+See [DOCKER.md](DOCKER.md) for complete Docker documentation.
 
 ### Option 2: Local Python Setup
 
@@ -99,21 +93,3 @@ pytest tests/test_rollover.py
 # Run with coverage
 pytest --cov=notetime
 ```
-
-## Published Docker Images
-
-Pre-built Docker images are automatically published to GitHub Container Registry:
-
-- **Latest:** `ghcr.io/pinhead001/notetime:latest`
-- **Versioned:** `ghcr.io/pinhead001/notetime:1.0.0`
-
-Images are built automatically on every push to main via GitHub Actions.
-
-**See [GITHUB-ACTIONS.md](GITHUB-ACTIONS.md) for CI/CD documentation**
-
-## Documentation
-
-- [Docker Setup](DOCKER.md) - Complete Docker guide
-- [Docker for Windows](DOCKER-WINDOWS.md) - Windows-specific instructions
-- [GitHub Actions](GITHUB-ACTIONS.md) - CI/CD and image publishing
-- [Git Instructions](GIT-instructions.md) - Branch management and merging

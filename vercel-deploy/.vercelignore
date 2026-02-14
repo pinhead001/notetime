@@ -1,0 +1,47 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+venv
+env
+
+# Testing
+tests/
+.pytest_cache
+.coverage
+htmlcov/
+*.db
+
+# Documentation
+*.md
+docs/
+
+# Demo scripts
+scripts/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Database files (SQLite not suitable for serverless)
+*.db
+*.sqlite
+*.sqlite3

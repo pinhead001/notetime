@@ -14,6 +14,10 @@
     <div class="container">
         <!-- Header -->
         <header>
+            <div class="user-info">
+                <span class="user-welcome">Welcome, <strong>{{ user.username }}</strong></span>
+                <a href="/auth/logout" class="btn-logout">Logout</a>
+            </div>
             <h1>Notetime</h1>
             <p class="week-label">Week of {{ week.start_date }}</p>
             {% if week.note %}

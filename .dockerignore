@@ -1,19 +1,18 @@
 # Git
 .git
 .gitignore
+.github
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+# Python
+__pycache__
+*.py[cod]
+*$py.class
 *.so
-*.egg
-*.egg-info/
+.Python
+*.egg-info
 dist/
 build/
-*.whl
+*.egg
 
 # Virtual environments
 venv/
@@ -21,7 +20,7 @@ env/
 ENV/
 .venv
 
-# IDEs
+# IDE
 .vscode/
 .idea/
 *.swp
@@ -33,40 +32,34 @@ ENV/
 .coverage
 htmlcov/
 .tox/
-.nox/
 
-# Database files (will be in volumes)
+# Local database files
 *.db
 *.sqlite
 *.sqlite3
 notetime.db
-test.db
 
-# Environment variables
+# Environment files
 .env
 .env.local
-
-# Documentation
-*.md
-!README.md
-!rules.md
-
-# Render config
-render.yaml
+.env.*.local
 
 # Docker
 Dockerfile
-docker-compose.yml
+docker-compose*.yml
 .dockerignore
 
-# OS
+# Documentation
+*.md
+docs/
+
+# Deployment configs
+vercel.json
+.vercel/
+.vercelignore
+render.yaml
+vercel-deploy/
+
+# Misc
 .DS_Store
-Thumbs.db
-
-# Logs
 *.log
-
-# Other
-todo.txt
-scripts/
-tests/
