@@ -1476,6 +1476,118 @@ async def submit_feedback_api(
     return feedback
 
 
+@app.get("/api/help")
+async def api_help():
+    """
+    User-friendly reference for all CRUD endpoints.
+
+    Returns a structured summary of every API operation, grouped by resource,
+    with the HTTP method, path, required fields, and a plain-language description.
+    All endpoints (except /api/auth/*) require authentication via cookie or
+    'Authorization: Bearer <token>' header.
+    """
+    return {
+        "overview": (
+            "Notetime API — Weekly task and time-tracking. "
+            "CRUD = Create (POST), Read (GET), Update (PUT/PATCH), Delete (DELETE). "
+            "All /api/* endpoints except /api/auth/* require a valid JWT token."
+        ),
+        "interactive_docs": {"swagger": "/docs", "redoc": "/redoc"},
+        "resources": {
+            "auth": [
+                {"method": "POST", "path": "/api/auth/register",
+                 "description": "Create a new account",
+                 "body": {"email": "str", "username": "str", "password": "str (min 6 chars)"}},
+                {"method": "POST", "path": "/api/auth/login",
+                 "description": "Log in and receive a JWT token",
+                 "body": {"username": "str", "password": "str"}},
+                {"method": "GET", "path": "/api/auth/me",
+                 "description": "Get the currently authenticated user's profile"},
+            ],
+            "weeks": [
+                {"method": "GET", "path": "/api/weeks",
+                 "description": "List all weeks for the current user"},
+                {"method": "POST", "path": "/api/weeks",
+                 "description": "Create a new week",
+                 "body": {"start_date": "YYYY-MM-DD (must be a Monday)", "note": "str (optional)"}},
+                {"method": "GET", "path": "/api/weeks/{week_id}",
+                 "description": "Get a specific week by ID"},
+                {"method": "PATCH", "path": "/api/weeks/{week_id}",
+                 "description": "Update a week's scratchpad note",
+                 "body": {"note": "str"}},
+                {"method": "GET", "path": "/api/weeks/{week_id}/tasks",
+                 "description": "List all tasks belonging to a week"},
+                {"method": "GET", "path": "/api/weeks/{week_id}/export",
+                 "description": "Export the week's time log as a CSV file"},
+            ],
+            "projects": [
+                {"method": "GET", "path": "/api/projects",
+                 "description": "List all projects for the current user"},
+                {"method": "POST", "path": "/api/projects",
+                 "description": "Create a new project",
+                 "body": {"name": "str", "is_active": "bool (default true)"}},
+                {"method": "PUT", "path": "/api/projects/{project_id}",
+                 "description": "Update a project name or active status",
+                 "body": {"name": "str (optional)", "is_active": "bool (optional)"}},
+                {"method": "DELETE", "path": "/api/projects/{project_id}",
+                 "description": "Soft-delete a project (sets is_active=false, preserves history)"},
+            ],
+            "tasks": [
+                {"method": "GET", "path": "/api/tasks",
+                 "description": "List all tasks for the current user across all weeks"},
+                {"method": "POST", "path": "/api/tasks",
+                 "description": "Create a new task",
+                 "body": {"title": "str", "week_id": "int", "state": "active|delegated|completed|canceled",
+                          "priority": "int (1=highest)", "project_id": "int (optional)",
+                          "delegate": "str (optional)"}},
+                {"method": "GET", "path": "/api/tasks/{task_id}",
+                 "description": "Get a specific task by ID"},
+                {"method": "PUT", "path": "/api/tasks/{task_id}",
+                 "description": "Update a task",
+                 "body": {"title": "str (optional)", "state": "str (optional)",
+                          "priority": "int (optional)", "delegate": "str (optional)"}},
+                {"method": "DELETE", "path": "/api/tasks/{task_id}",
+                 "description": "Delete a task and all its time entries"},
+                {"method": "PUT", "path": "/api/tasks/{task_id}/complete",
+                 "description": "Toggle a task between completed and active"},
+                {"method": "PUT", "path": "/api/tasks/{task_id}/defer",
+                 "description": "Defer a task to the following week"},
+            ],
+            "work_entries": [
+                {"method": "GET", "path": "/api/work_entries",
+                 "description": "List all time entries for the current user"},
+                {"method": "POST", "path": "/api/work_entries",
+                 "description": "Log time against a task",
+                 "body": {"task_id": "int", "date": "YYYY-MM-DD",
+                          "minutes": "int (positive)", "note": "str (optional)"}},
+                {"method": "GET", "path": "/api/work_entries/{entry_id}",
+                 "description": "Get a specific time entry"},
+                {"method": "PUT", "path": "/api/work_entries/{entry_id}",
+                 "description": "Update a time entry",
+                 "body": {"minutes": "int (optional)", "note": "str (optional)"}},
+                {"method": "DELETE", "path": "/api/work_entries/{entry_id}",
+                 "description": "Delete a time entry"},
+            ],
+            "feedback": [
+                {"method": "POST", "path": "/api/feedback",
+                 "description": "Submit beta feedback (works without login)",
+                 "body": {"category": "bug|feature|ux|performance|other",
+                          "title": "str (max 200 chars)", "description": "str",
+                          "rating": "1-5 (optional)", "contact_email": "str (optional)"}},
+                {"method": "GET", "path": "/api/feedback",
+                 "description": "List feedback submitted by the current user"},
+            ],
+        },
+        "task_states": {
+            "active": "In progress, will roll over to next week if not completed",
+            "delegated": "Handed off to someone else, also rolls over automatically",
+            "completed": "Done — stays in the week it was completed",
+            "canceled": "Dropped — stays in the week it was created",
+        },
+        "time_rounding": "Raw minutes are stored as entered. Weekly summary rounds UP to the nearest 15-minute increment per task per day.",
+    }
+
+
 @app.get("/api/feedback", response_model=List[FeedbackResponse])
 async def list_feedback(
     current_user: User = Depends(get_current_user),
