@@ -24,10 +24,10 @@ from sqlalchemy.orm import Session
 from notetime.db import SessionLocal, engine, get_db
 from notetime.models import Base, Week, Project, Task, WorkEntry, TaskState, User, Feedback
 from notetime.schemas import (
-    TaskCreate, TaskResponse,
-    WorkEntryCreate, WorkEntryResponse,
+    TaskCreate, TaskResponse, TaskUpdate,
+    WorkEntryCreate, WorkEntryResponse, WorkEntryUpdate,
     WeekCreate, WeekResponse, WeeklyView,
-    ProjectCreate, ProjectResponse,
+    ProjectCreate, ProjectResponse, ProjectUpdate,
     UserRegister, UserLogin, Token, UserResponse,
     FeedbackCreate, FeedbackResponse
 )
@@ -309,7 +309,7 @@ async def logout():
 # Week API Endpoints
 # ============================================
 
-@app.post("/api/weeks", response_model=WeekResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/weeks", response_model=WeekResponse)
 async def create_week_api(
     week_data: WeekCreate,
     current_user: User = Depends(get_current_user),
@@ -371,11 +371,44 @@ async def list_weeks_api(
     return weeks
 
 
+@app.get("/api/weeks/{week_id}", response_model=WeekResponse)
+async def get_week_api(
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific week by ID."""
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+    return week
+
+
+@app.get("/api/weeks/{week_id}/tasks", response_model=List[TaskResponse])
+async def list_tasks_for_week_api(
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all tasks for a specific week."""
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+    tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
+    return tasks
+
+
 # ============================================
 # Project API Endpoints
 # ============================================
 
-@app.post("/api/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/projects", response_model=ProjectResponse)
 async def create_project_api(
     project_data: ProjectCreate,
     current_user: User = Depends(get_current_user),
@@ -443,31 +476,78 @@ async def list_projects_api(
     return projects
 
 
+@app.get("/api/projects/{project_id}", response_model=ProjectResponse)
+async def get_project_api(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific project by ID."""
+    project = db.get(Project, project_id)
+    if not project or project.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    return project
+
+
+@app.put("/api/projects/{project_id}", response_model=ProjectResponse)
+async def update_project_api(
+    project_id: int,
+    project_data: ProjectUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update an existing project."""
+    project = db.get(Project, project_id)
+    if not project or project.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    if project_data.name is not None:
+        project.name = project_data.name
+    if project_data.is_active is not None:
+        project.is_active = project_data.is_active
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project_api(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a project."""
+    project = db.get(Project, project_id)
+    if not project or project.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    db.delete(project)
+    db.commit()
+    return {"message": "Project deleted"}
+
+
 # ============================================
 # Task Endpoints
 # ============================================
 
-@app.post("/api/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/tasks", response_model=TaskResponse)
 async def create_task_api(
-    title: str = Form(...),
-    week_id: int = Form(...),
-    state: str = Form("active"),
-    priority: int = Form(3),
-    project_id: Optional[int] = Form(None),
-    delegate: Optional[str] = Form(None),
+    task_data: TaskCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Create a new task (accepts form data for HTMX or JSON for API).
+    Create a new task (JSON body).
 
     Args:
-        title: Task title
-        week_id: Week ID
-        state: Task state (default: active)
-        priority: Priority level (default: 3)
-        project_id: Project ID (optional)
-        delegate: Delegate name (optional)
+        task_data: Task creation data (title, week_id, state, priority, project_id, delegate)
 
     Returns:
         Created task with ID
@@ -476,35 +556,70 @@ async def create_task_api(
         404: If week_id or project_id doesn't exist or doesn't belong to user
     """
     # Verify week exists and belongs to user
-    week = db.get(Week, week_id)
+    week = db.get(Week, task_data.week_id)
     if not week or week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Week with id {week_id} not found"
+            detail=f"Week with id {task_data.week_id} not found"
         )
 
     # Verify project exists and belongs to user if provided
-    if project_id is not None and project_id != "":
-        project = db.get(Project, project_id)
+    if task_data.project_id is not None:
+        project = db.get(Project, task_data.project_id)
         if not project or project.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Project with id {project_id} not found"
+                detail=f"Project with id {task_data.project_id} not found"
             )
 
     # Create task
     db_task = Task(
-        title=title,
-        week_id=week_id,
-        state=state,
-        priority=priority,
-        project_id=project_id if project_id and project_id != "" else None,
-        delegate=delegate
+        title=task_data.title,
+        week_id=task_data.week_id,
+        state=task_data.state,
+        priority=task_data.priority,
+        project_id=task_data.project_id,
+        delegate=task_data.delegate
     )
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
 
+    return db_task
+
+
+@app.put("/api/tasks/{task_id}", response_model=TaskResponse)
+async def update_task_api(
+    task_id: int,
+    task_data: TaskUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update an existing task (JSON body)."""
+    db_task = db.get(Task, task_id)
+    if not db_task or db_task.week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {task_id} not found"
+        )
+
+    if task_data.title is not None:
+        db_task.title = task_data.title
+    if task_data.state is not None:
+        valid_states = [s.value for s in TaskState]
+        if task_data.state not in valid_states:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid state. Must be one of: {valid_states}"
+            )
+        db_task.state = task_data.state
+    if task_data.priority is not None:
+        db_task.priority = task_data.priority
+    if task_data.delegate is not None:
+        db_task.delegate = task_data.delegate
+
+    db.commit()
+    db.refresh(db_task)
     return db_task
 
 
@@ -518,22 +633,7 @@ def update_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Update an existing task.
-
-    Args:
-        task_id: ID of task to update
-        title: New title (optional)
-        state: New state (optional)
-        priority: New priority (optional)
-        delegate: New delegate (optional)
-
-    Returns:
-        Updated task
-
-    Raises:
-        404: If task not found or doesn't belong to user
-    """
+    """Update an existing task (query params, legacy endpoint)."""
     db_task = db.get(Task, task_id)
     if not db_task or db_task.week.user_id != current_user.id:
         raise HTTPException(
@@ -541,11 +641,9 @@ def update_task(
             detail=f"Task with id {task_id} not found"
         )
 
-    # Update fields if provided
     if title is not None:
         db_task.title = title
     if state is not None:
-        # Validate state
         valid_states = [s.value for s in TaskState]
         if state not in valid_states:
             raise HTTPException(
@@ -560,7 +658,6 @@ def update_task(
 
     db.commit()
     db.refresh(db_task)
-
     return db_task
 
 
@@ -596,23 +693,17 @@ def get_task(
 # Work Entry Endpoints
 # ============================================
 
-@app.post("/api/work_entries", response_model=WorkEntryResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/work_entries", response_model=WorkEntryResponse)
 async def create_work_entry_api(
-    task_id: int = Form(...),
-    date: date = Form(...),
-    minutes: int = Form(...),
-    note: Optional[str] = Form(None),
+    entry_data: WorkEntryCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Create a new work entry (time log) - accepts form data for HTMX.
+    Create a new work entry (time log) - JSON body.
 
     Args:
-        task_id: ID of task
-        date: Date of work
-        minutes: Minutes worked
-        note: Optional note
+        entry_data: Work entry creation data (task_id, date, minutes, note)
 
     Returns:
         Created work entry with ID
@@ -621,27 +712,20 @@ async def create_work_entry_api(
         404: If task_id doesn't exist or doesn't belong to user
         422: If validation fails (e.g., negative minutes)
     """
-    # Validate minutes
-    if minutes <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Minutes must be positive"
-        )
-
     # Verify task exists and belongs to user
-    task = db.get(Task, task_id)
+    task = db.get(Task, entry_data.task_id)
     if not task or task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task with id {task_id} not found"
+            detail=f"Task with id {entry_data.task_id} not found"
         )
 
     # Create work entry
     db_entry = WorkEntry(
-        task_id=task_id,
-        date=date,
-        minutes=minutes,
-        note=note
+        task_id=entry_data.task_id,
+        date=entry_data.date,
+        minutes=entry_data.minutes,
+        note=entry_data.note
     )
     db.add(db_entry)
     db.commit()
@@ -650,31 +734,98 @@ async def create_work_entry_api(
     return db_entry
 
 
-@app.get("/work_entries/{entry_id}", response_model=WorkEntryResponse)
-def get_work_entry(
+@app.get("/api/tasks/{task_id}/work_entries", response_model=List[WorkEntryResponse])
+async def list_work_entries_for_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all work entries for a specific task."""
+    task = db.get(Task, task_id)
+    if not task or task.week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {task_id} not found"
+        )
+    entries = db.scalars(select(WorkEntry).where(WorkEntry.task_id == task_id)).all()
+    return entries
+
+
+@app.get("/api/work_entries/{entry_id}", response_model=WorkEntryResponse)
+async def get_work_entry_api(
     entry_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Get a specific work entry by ID.
-
-    Args:
-        entry_id: ID of work entry to retrieve
-
-    Returns:
-        Work entry details
-
-    Raises:
-        404: If work entry not found or doesn't belong to user
-    """
+    """Get a specific work entry by ID."""
     db_entry = db.get(WorkEntry, entry_id)
     if not db_entry or db_entry.task.week.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
         )
+    return db_entry
 
+
+@app.put("/api/work_entries/{entry_id}", response_model=WorkEntryResponse)
+async def update_work_entry_api(
+    entry_id: int,
+    entry_data: WorkEntryUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update an existing work entry."""
+    db_entry = db.get(WorkEntry, entry_id)
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work entry with id {entry_id} not found"
+        )
+    if entry_data.minutes is not None:
+        if entry_data.minutes <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Minutes must be positive"
+            )
+        db_entry.minutes = entry_data.minutes
+    if entry_data.note is not None:
+        db_entry.note = entry_data.note
+    db.commit()
+    db.refresh(db_entry)
+    return db_entry
+
+
+@app.delete("/api/work_entries/{entry_id}")
+async def delete_work_entry_api(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a work entry."""
+    db_entry = db.get(WorkEntry, entry_id)
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work entry with id {entry_id} not found"
+        )
+    db.delete(db_entry)
+    db.commit()
+    return {"message": "Work entry deleted"}
+
+
+@app.get("/work_entries/{entry_id}", response_model=WorkEntryResponse)
+def get_work_entry(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific work entry by ID (legacy endpoint without /api/ prefix)."""
+    db_entry = db.get(WorkEntry, entry_id)
+    if not db_entry or db_entry.task.week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work entry with id {entry_id} not found"
+        )
     return db_entry
 
 
@@ -996,6 +1147,58 @@ async def weekly_view_by_id(
 # HTMX Partial Routes
 # ============================================
 
+@app.post("/htmx/tasks", response_model=TaskResponse)
+async def create_task_htmx(
+    title: str = Form(...),
+    week_id: int = Form(...),
+    state: str = Form("active"),
+    priority: int = Form(3),
+    project_id: Optional[int] = Form(None),
+    delegate: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new task from HTMX form (accepts form data)."""
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Week with id {week_id} not found")
+
+    if project_id is not None:
+        project = db.get(Project, project_id)
+        if not project or project.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Project with id {project_id} not found")
+
+    db_task = Task(title=title, week_id=week_id, state=state, priority=priority, project_id=project_id, delegate=delegate)
+    db.add(db_task)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
+
+
+@app.post("/htmx/work_entries", response_model=WorkEntryResponse)
+async def create_work_entry_htmx(
+    task_id: int = Form(...),
+    date: date = Form(...),
+    minutes: int = Form(...),
+    note: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new work entry from HTMX form (accepts form data)."""
+    if minutes <= 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Minutes must be positive")
+
+    task = db.get(Task, task_id)
+    if not task or task.week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task with id {task_id} not found")
+
+    db_entry = WorkEntry(task_id=task_id, date=date, minutes=minutes, note=note)
+    db.add(db_entry)
+    db.commit()
+    db.refresh(db_entry)
+    return db_entry
+
+
 @app.get("/partials/task-form", response_class=HTMLResponse)
 async def task_form_partial(
     request: Request,
@@ -1012,7 +1215,7 @@ async def task_form_partial(
     ).all()
 
     html = f"""
-    <form hx-post="/api/tasks" hx-target="#add-task-container">
+    <form hx-post="/htmx/tasks" hx-target="#add-task-container">
         <input type="hidden" name="week_id" value="{week_id}">
         <input type="text" name="title" placeholder="Task title" required>
         <select name="project_id">
@@ -1054,7 +1257,7 @@ async def log_form_partial(
     tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
 
     html = f"""
-    <form hx-post="/api/work_entries" hx-target="#add-log-container">
+    <form hx-post="/htmx/work_entries" hx-target="#add-log-container">
         <select name="task_id" required>
             <option value="">Select task...</option>
             {"".join(f'<option value="{t.id}">{t.title}</option>' for t in tasks)}

@@ -108,6 +108,23 @@ class WorkEntryCreate(BaseModel):
             raise ValueError("Minutes must be positive")
         return v
 
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    state: Optional[str] = None
+    priority: Optional[int] = None
+    delegate: Optional[str] = None
+
+
+class WorkEntryUpdate(BaseModel):
+    minutes: Optional[int] = None
+    note: Optional[str] = None
+
 # ------------------------------
 # Task summary output
 # ------------------------------
