@@ -172,7 +172,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 @app.get("/auth/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Display login page"""
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 
 @app.post("/auth/login", response_class=HTMLResponse)
@@ -190,15 +190,15 @@ async def login_form(
 
     if not user or not verify_password(password, user.hashed_password):
         return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Incorrect username or password"},
+            request, "login.html",
+            {"error": "Incorrect username or password"},
             status_code=401
         )
 
     if not user.is_active:
         return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Account is inactive"},
+            request, "login.html",
+            {"error": "Account is inactive"},
             status_code=400
         )
 
@@ -220,7 +220,7 @@ async def login_form(
 @app.get("/auth/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     """Display registration page"""
-    return templates.TemplateResponse("register.html", {"request": request})
+    return templates.TemplateResponse(request, "register.html")
 
 
 @app.post("/auth/register", response_class=HTMLResponse)
@@ -235,16 +235,16 @@ async def register_form(
     # Validate username length
     if len(username) < 3:
         return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Username must be at least 3 characters"},
+            request, "register.html",
+            {"error": "Username must be at least 3 characters"},
             status_code=400
         )
 
     # Validate password length
     if len(password) < 6:
         return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Password must be at least 6 characters"},
+            request, "register.html",
+            {"error": "Password must be at least 6 characters"},
             status_code=400
         )
 
@@ -254,8 +254,8 @@ async def register_form(
     ).first()
     if existing_user:
         return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Username already registered"},
+            request, "register.html",
+            {"error": "Username already registered"},
             status_code=400
         )
 
@@ -265,8 +265,8 @@ async def register_form(
     ).first()
     if existing_email:
         return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Email already registered"},
+            request, "register.html",
+            {"error": "Email already registered"},
             status_code=400
         )
 
@@ -1111,14 +1111,22 @@ async def weekly_view(
     # Get weekly data
     weekly_data = get_week(week.id, current_user, db)
 
-    return templates.TemplateResponse("weekly.html", {
-        "request": request,
+    # Get all active projects for the current user (for task creation dropdown)
+    all_projects = db.scalars(
+        select(Project).where(
+            Project.user_id == current_user.id,
+            Project.is_active == True
+        ).order_by(Project.name)
+    ).all()
+
+    return templates.TemplateResponse(request, "weekly.html", {
         "week": weekly_data.week,
         "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
-        "user": current_user
+        "user": current_user,
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects]
     })
 
 
@@ -1132,14 +1140,22 @@ async def weekly_view_by_id(
     """Serve weekly page for a specific week"""
     weekly_data = get_week(week_id, current_user, db)
 
-    return templates.TemplateResponse("weekly.html", {
-        "request": request,
+    # Get all active projects for the current user (for task creation dropdown)
+    all_projects = db.scalars(
+        select(Project).where(
+            Project.user_id == current_user.id,
+            Project.is_active == True
+        ).order_by(Project.name)
+    ).all()
+
+    return templates.TemplateResponse(request, "weekly.html", {
         "week": weekly_data.week,
         "tasks": weekly_data.tasks,
         "work_entries": weekly_data.work_entries,
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
-        "user": current_user
+        "user": current_user,
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects]
     })
 
 
@@ -1333,8 +1349,8 @@ async def feedback_form(
 ):
     """Render the beta feedback form."""
     return templates.TemplateResponse(
-        "feedback.html",
-        {"request": request, "current_user": current_user, "success": False, "error": None},
+        request, "feedback.html",
+        {"current_user": current_user, "success": False, "error": None},
     )
 
 
@@ -1356,8 +1372,8 @@ async def submit_feedback_form(
     # Validate
     if category not in VALID_CATEGORIES:
         return templates.TemplateResponse(
-            "feedback.html",
-            {"request": request, "current_user": current_user, "success": False,
+            request, "feedback.html",
+            {"current_user": current_user, "success": False,
              "error": "Please select a valid feedback category."},
             status_code=422,
         )
@@ -1365,15 +1381,15 @@ async def submit_feedback_form(
     description = description.strip()
     if not title or len(title) > 200:
         return templates.TemplateResponse(
-            "feedback.html",
-            {"request": request, "current_user": current_user, "success": False,
+            request, "feedback.html",
+            {"current_user": current_user, "success": False,
              "error": "Title is required and must be 200 characters or fewer."},
             status_code=422,
         )
     if not description:
         return templates.TemplateResponse(
-            "feedback.html",
-            {"request": request, "current_user": current_user, "success": False,
+            request, "feedback.html",
+            {"current_user": current_user, "success": False,
              "error": "Description is required."},
             status_code=422,
         )
@@ -1408,8 +1424,8 @@ async def submit_feedback_form(
     db.commit()
 
     return templates.TemplateResponse(
-        "feedback.html",
-        {"request": request, "current_user": current_user, "success": True, "error": None},
+        request, "feedback.html",
+        {"current_user": current_user, "success": True, "error": None},
     )
 
 

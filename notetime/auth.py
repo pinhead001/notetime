@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.orm import Session
 
 from notetime.db import SessionLocal, get_db
@@ -33,9 +33,7 @@ class Settings(BaseSettings):
     # Tokens expire after 7 days. After expiry the user must log in again.
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 settings = Settings()
