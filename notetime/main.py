@@ -1126,7 +1126,8 @@ async def weekly_view(
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "user": current_user,
-        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects]
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],
+        "all_tasks": weekly_data.tasks
     })
 
 
@@ -1155,7 +1156,8 @@ async def weekly_view_by_id(
         "projects": weekly_data.projects,
         "summary": weekly_data.summary,
         "user": current_user,
-        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects]
+        "all_projects": [{"id": p.id, "name": p.name} for p in all_projects],
+        "all_tasks": weekly_data.tasks
     })
 
 
