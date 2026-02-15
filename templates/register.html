@@ -36,8 +36,27 @@
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required minlength="6">
-                    <small>At least 6 characters</small>
+                    <div class="password-wrapper">
+                        <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
+                        <button type="button" class="password-toggle" id="togglePassword" aria-label="Show password">
+                            <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            <svg id="eyeOffIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                                <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="password-strength" id="passwordStrength" aria-live="polite">
+                        <div class="strength-bar">
+                            <div class="strength-fill" id="strengthFill"></div>
+                        </div>
+                        <small class="strength-label" id="strengthLabel"></small>
+                    </div>
+                    <small>At least 8 characters</small>
                 </div>
 
                 <button type="submit" class="btn-primary">Register</button>
@@ -48,5 +67,61 @@
             </p>
         </section>
     </div>
+
+    <script>
+        // Show/hide password toggle
+        const toggleBtn = document.getElementById('togglePassword');
+        const passwordInput = document.getElementById('password');
+        const eyeIcon = document.getElementById('eyeIcon');
+        const eyeOffIcon = document.getElementById('eyeOffIcon');
+
+        toggleBtn.addEventListener('click', function () {
+            const isHidden = passwordInput.type === 'password';
+            passwordInput.type = isHidden ? 'text' : 'password';
+            eyeIcon.style.display = isHidden ? 'none' : '';
+            eyeOffIcon.style.display = isHidden ? '' : 'none';
+            toggleBtn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        });
+
+        // Password strength based on entropy
+        passwordInput.addEventListener('input', function () {
+            const val = this.value;
+            const strengthEl = document.getElementById('passwordStrength');
+            const fill = document.getElementById('strengthFill');
+            const label = document.getElementById('strengthLabel');
+
+            if (val.length === 0) {
+                strengthEl.style.display = 'none';
+                return;
+            }
+
+            strengthEl.style.display = 'block';
+
+            // Calculate charset size from which characters are used
+            let charsetSize = 0;
+            if (/[a-z]/.test(val)) charsetSize += 26;
+            if (/[A-Z]/.test(val)) charsetSize += 26;
+            if (/[0-9]/.test(val)) charsetSize += 10;
+            if (/[^a-zA-Z0-9]/.test(val)) charsetSize += 32;
+
+            const entropy = val.length * Math.log2(charsetSize || 1);
+
+            let level, text, color;
+            if (entropy < 28) {
+                level = 1; text = 'Weak'; color = '#e74c3c';
+            } else if (entropy < 50) {
+                level = 2; text = 'Fair'; color = '#e67e22';
+            } else if (entropy < 70) {
+                level = 3; text = 'Good'; color = '#f1c40f';
+            } else {
+                level = 4; text = 'Strong'; color = '#27ae60';
+            }
+
+            fill.style.width = (level * 25) + '%';
+            fill.style.backgroundColor = color;
+            label.textContent = text;
+            label.style.color = color;
+        });
+    </script>
 </body>
 </html>

@@ -241,10 +241,10 @@ async def register_form(
         )
 
     # Validate password length
-    if len(password) < 6:
+    if len(password) < 8:
         return templates.TemplateResponse(
             request, "register.html",
-            {"error": "Password must be at least 6 characters"},
+            {"error": "Password must be at least 8 characters"},
             status_code=400
         )
 
