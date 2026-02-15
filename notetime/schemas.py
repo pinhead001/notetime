@@ -98,6 +98,7 @@ class WeekCreate(BaseModel):
     # date type accepts "YYYY-MM-DD" strings and converts to Python date objects.
     start_date: date
     note: Optional[str] = None
+    scratchpad: Optional[str] = None
 
 
 # ------------------------------
@@ -155,6 +156,7 @@ class WorkEntryCreate(BaseModel):
 # the fields they want to change (PATCH-style semantics, even though we use PUT).
 class WeekUpdate(BaseModel):
     note: Optional[str] = None
+    scratchpad: Optional[str] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -209,6 +211,7 @@ class WeekResponse(BaseModel):
     id: int
     start_date: date
     note: Optional[str] = None
+    scratchpad: Optional[str] = None
 
 
 # ------------------------------
