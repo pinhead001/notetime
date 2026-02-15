@@ -11,6 +11,7 @@ API will be available at:
     http://localhost:8000 (Web UI)
 """
 import csv
+import html as _html
 import io
 from datetime import date, timedelta
 from typing import List, Optional
@@ -20,6 +21,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,13 +42,22 @@ from notetime.summary import generate_weekly_summary
 from notetime.nl_parser import parse_entry, EntryType
 from notetime.auth import (
     get_password_hash, verify_password, create_access_token,
-    get_current_user, get_optional_current_user
+    get_current_user, get_optional_current_user, COOKIE_SECURE
 )
 
 
 # Create database tables (commented out for testing - tables should be created via migrations or seed scripts)
 # Base.metadata.create_all(bind=engine)
 
+
+# Rate limiter — uses the client's IP address as the key.
+# Limits are relaxed when TESTING=true so the test suite can call auth
+# endpoints without hitting the per-IP counter.
+import os as _os
+_TESTING = _os.environ.get("TESTING", "").lower() in ("true", "1")
+_REGISTER_LIMIT = "99999/minute" if _TESTING else "5/minute"
+_LOGIN_LIMIT = "99999/minute" if _TESTING else "10/minute"
+limiter = Limiter(key_func=get_remote_address)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -54,6 +68,11 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json"
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda req, exc: __import__('fastapi').responses.JSONResponse(
+    status_code=429, content={"detail": "Too many requests. Please slow down."}
+))
+app.add_middleware(SlowAPIMiddleware)
 
 # Setup templates and static files
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -66,7 +85,8 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 # ============================================
 
 @app.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegister, db: Session = Depends(get_db)):
+@limiter.limit(_REGISTER_LIMIT)
+async def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
     """
     Register a new user.
 
@@ -115,7 +135,8 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit(_LOGIN_LIMIT)
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
     Login and get access token.
 
@@ -179,6 +200,7 @@ async def login_page(request: Request):
 
 
 @app.post("/auth/login", response_class=HTMLResponse)
+@limiter.limit(_LOGIN_LIMIT)
 async def login_form(
     request: Request,
     username: str = Form(...),
@@ -215,7 +237,8 @@ async def login_form(
         value=f"Bearer {access_token}",
         httponly=True,
         max_age=60 * 60 * 24 * 7,  # 7 days
-        samesite="lax"
+        samesite="lax",
+        secure=COOKIE_SECURE,
     )
     return response
 
@@ -227,6 +250,7 @@ async def register_page(request: Request):
 
 
 @app.post("/auth/register", response_class=HTMLResponse)
+@limiter.limit(_REGISTER_LIMIT)
 async def register_form(
     request: Request,
     email: str = Form(...),
@@ -235,6 +259,15 @@ async def register_form(
     db: Session = Depends(get_db)
 ):
     """Handle registration form submission"""
+    # Validate email format (same rule as the JSON API endpoint via EmailStr)
+    import re as _re
+    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"error": "Please enter a valid email address"},
+            status_code=400
+        )
+
     # Validate username length
     if len(username) < 3:
         return templates.TemplateResponse(
@@ -295,7 +328,8 @@ async def register_form(
         value=f"Bearer {access_token}",
         httponly=True,
         max_age=60 * 60 * 24 * 7,  # 7 days
-        samesite="lax"
+        samesite="lax",
+        secure=COOKIE_SECURE,
     )
     return response
 
@@ -1413,7 +1447,7 @@ async def task_form_partial(
         <input type="text" name="title" placeholder="Task title" required>
         <select name="project_id">
             <option value="">No project</option>
-            {"".join(f'<option value="{p.id}">{p.name}</option>' for p in projects)}
+            {"".join(f'<option value="{p.id}">{_html.escape(p.name)}</option>' for p in projects)}
         </select>
         <select name="priority">
             <option value="1">Priority 1 (High)</option>
@@ -1453,7 +1487,7 @@ async def log_form_partial(
     <form hx-post="/htmx/work_entries" hx-target="#add-log-container">
         <select name="task_id" required>
             <option value="">Select task...</option>
-            {"".join(f'<option value="{t.id}">{t.title}</option>' for t in tasks)}
+            {"".join(f'<option value="{t.id}">{_html.escape(t.title)}</option>' for t in tasks)}
         </select>
         <input type="date" name="date" value="{date.today()}" required>
         <input type="number" name="minutes" placeholder="Minutes worked" min="1" required>
@@ -1483,8 +1517,12 @@ async def complete_task(
     db: Session = Depends(get_db)
 ):
     """Mark task as completed (HTMX action)"""
-    task = db.get(Task, task_id)
-    if not task or task.week.user_id != current_user.id:
+    task = db.scalars(
+        select(Task).join(Week, Task.week_id == Week.id).where(
+            Task.id == task_id, Week.user_id == current_user.id
+        )
+    ).first()
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     task.state = TaskState.COMPLETED.value
@@ -1494,20 +1532,38 @@ async def complete_task(
     return HTMLResponse(content=f'<div class="task-item task-completed">✓ {task.title} (Completed)</div>')
 
 
-@app.put("/api/tasks/{task_id}/defer", response_class=HTMLResponse)
+@app.put("/api/tasks/{task_id}/defer")
 async def defer_task(
     task_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Mark task for deferral (HTMX action)"""
-    # In a full implementation, this would rollover to next week
-    # For now, just mark it visually
-    task = db.get(Task, task_id)
-    if not task or task.week.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Task not found")
+    """Move a task to the following week (creates the week if it does not exist)."""
+    task = db.scalars(
+        select(Task).join(Week, Task.week_id == Week.id).where(
+            Task.id == task_id, Week.user_id == current_user.id
+        )
+    ).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')
+    current_week = db.get(Week, task.week_id)
+    next_week_start = current_week.start_date + timedelta(weeks=1)
+
+    next_week = db.scalars(
+        select(Week).where(
+            Week.start_date == next_week_start,
+            Week.user_id == current_user.id
+        )
+    ).first()
+    if not next_week:
+        next_week = Week(start_date=next_week_start, user_id=current_user.id)
+        db.add(next_week)
+        db.flush()
+
+    task.week_id = next_week.id
+    db.commit()
+    return {"message": "Task deferred to next week", "task_id": task_id, "new_week_id": next_week.id}
 
 
 @app.delete("/api/tasks/{task_id}")
@@ -1517,8 +1573,12 @@ async def delete_task_api(
     db: Session = Depends(get_db)
 ):
     """Delete a task and all its time entries."""
-    db_task = db.get(Task, task_id)
-    if not db_task or db_task.week.user_id != current_user.id:
+    db_task = db.scalars(
+        select(Task).join(Week, Task.week_id == Week.id).where(
+            Task.id == task_id, Week.user_id == current_user.id
+        )
+    ).first()
+    if not db_task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task with id {task_id} not found")
     db.delete(db_task)
     db.commit()
@@ -1532,8 +1592,12 @@ async def uncomplete_task(
     db: Session = Depends(get_db)
 ):
     """Set a completed task back to active."""
-    task = db.get(Task, task_id)
-    if not task or task.week.user_id != current_user.id:
+    task = db.scalars(
+        select(Task).join(Week, Task.week_id == Week.id).where(
+            Task.id == task_id, Week.user_id == current_user.id
+        )
+    ).first()
+    if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     task.state = TaskState.ACTIVE.value
     db.commit()

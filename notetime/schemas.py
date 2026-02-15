@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 from typing import Optional, List, Literal
-from pydantic import BaseModel, field_validator, ConfigDict, EmailStr
+from pydantic import BaseModel, field_validator, ConfigDict, EmailStr, Field
 
 # ---------------------------------------------------------------------------
 # About Pydantic schemas
@@ -104,22 +104,32 @@ class WeekCreate(BaseModel):
 # Project input
 # ------------------------------
 class ProjectCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
     is_active: bool = True
 
 
 # ------------------------------
 # Task input
 # ------------------------------
+_VALID_TASK_STATES = {"active", "delegated", "completed", "canceled"}
+
+
 class TaskCreate(BaseModel):
-    title: str
+    title: str = Field(..., min_length=1, max_length=200)
     week_id: int   # Must reference an existing Week that belongs to the user
     state: str = "active"
     priority: int = 3
     project_id: Optional[int] = None   # None = no project
-    delegate: Optional[str] = None     # Free-text name of person task is delegated to
+    delegate: Optional[str] = Field(None, max_length=100)
     parent_task_id: Optional[int] = None  # Parent for subtask hierarchy
     sort_order: int = 0                   # Explicit position within the week
+
+    @field_validator("state")
+    @classmethod
+    def state_valid(cls, v):
+        if v not in _VALID_TASK_STATES:
+            raise ValueError(f"state must be one of: {sorted(_VALID_TASK_STATES)}")
+        return v
 
 
 # ------------------------------
@@ -129,7 +139,7 @@ class WorkEntryCreate(BaseModel):
     task_id: int
     date: date
     minutes: int
-    note: str | None = None
+    note: Optional[str] = Field(None, max_length=2000)
     start_time: Optional[time] = None
     end_time: Optional[time] = None
 
@@ -148,22 +158,29 @@ class WeekUpdate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
     is_active: Optional[bool] = None
 
 
 class TaskUpdate(BaseModel):
-    title: Optional[str] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
     state: Optional[str] = None
     priority: Optional[int] = None
-    delegate: Optional[str] = None
+    delegate: Optional[str] = Field(None, max_length=100)
     parent_task_id: Optional[int] = None
     sort_order: Optional[int] = None
+
+    @field_validator("state")
+    @classmethod
+    def state_valid(cls, v):
+        if v is not None and v not in _VALID_TASK_STATES:
+            raise ValueError(f"state must be one of: {sorted(_VALID_TASK_STATES)}")
+        return v
 
 
 class WorkEntryUpdate(BaseModel):
     minutes: Optional[int] = None
-    note: Optional[str] = None
+    note: Optional[str] = Field(None, max_length=2000)
     start_time: Optional[time] = None
     end_time: Optional[time] = None
 

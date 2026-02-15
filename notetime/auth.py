@@ -1,14 +1,15 @@
 import base64
 import hashlib
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt as _bcrypt
+import jwt as _jwt
+from jwt.exceptions import InvalidTokenError
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.orm import Session
 
@@ -22,11 +23,14 @@ from notetime.models import User
 # pydantic_settings.BaseSettings reads values from a .env file and/or from
 # real environment variables (env vars override the .env file).
 # This keeps secrets out of source code.
+_INSECURE_DEFAULT_KEY = "your-secret-key-change-this-in-production"
+
+
 class Settings(BaseSettings):
     # SECRET_KEY is used to sign JWTs. Anyone who knows this key can forge
     # tokens, so in production it must be a long random string stored in an
     # environment variable — never committed to the repo.
-    secret_key: str = "your-secret-key-change-this-in-production"
+    secret_key: str = _INSECURE_DEFAULT_KEY
 
     # HS256 = HMAC-SHA256. The most common JWT signing algorithm.
     algorithm: str = "HS256"
@@ -34,13 +38,28 @@ class Settings(BaseSettings):
     # Tokens expire after 7 days. After expiry the user must log in again.
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
+    # Set to False only in local HTTP development (COOKIE_SECURE=false in .env).
+    # Must remain True in any HTTPS/production environment.
+    cookie_secure: bool = True
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 settings = Settings()
+
+# Fail fast if the placeholder key is used outside of local HTTP development.
+# A known-public SECRET_KEY means any attacker can forge valid JWTs.
+if settings.secret_key == _INSECURE_DEFAULT_KEY and settings.cookie_secure:
+    raise RuntimeError(
+        "SECRET_KEY is set to the insecure default value. "
+        "Set a strong random SECRET_KEY in your environment or .env file before starting. "
+        "If you are running locally over plain HTTP, also set COOKIE_SECURE=false."
+    )
+
 SECRET_KEY = settings.secret_key
 ALGORITHM = settings.algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
+COOKIE_SECURE = settings.cookie_secure
 
 # ---------------------------------------------------------------------------
 # Password hashing
@@ -98,23 +117,23 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """Create a JWT access token"""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     # Add the expiry claim to the payload before signing.
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = _jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 
 def decode_access_token(token: str) -> Optional[dict]:
     """Decode and verify a JWT token"""
     try:
-        # jwt.decode() verifies the signature AND checks the exp claim.
-        # Returns the payload dict if valid, raises JWTError if not.
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # _jwt.decode() verifies the signature AND checks the exp claim.
+        # Returns the payload dict if valid, raises InvalidTokenError if not.
+        payload = _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
-    except JWTError:
+    except InvalidTokenError:
         # Covers: bad signature, expired token, malformed token, etc.
         return None
 
@@ -206,13 +225,6 @@ def get_current_user(
         raise HTTPException(status_code=400, detail="Inactive user")
 
     return user
-
-
-def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
-    """Get the current active user"""
-    if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
 
 
 # ---------------------------------------------------------------------------

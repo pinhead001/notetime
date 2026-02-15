@@ -8,5 +8,11 @@ addopts = [
     "--strict-markers",
     "--tb=short",
 ]
+# Provide safe test values so auth.py startup check doesn't block test runs
+env = [
+    "SECRET_KEY=test-secret-key-for-pytest-only",
+    "COOKIE_SECURE=false",
+    "TESTING=true",
+]
 # Exclude scripts directory from test collection
 norecursedirs = ["scripts", ".git", "__pycache__", "*.egg-info"]

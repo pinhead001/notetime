@@ -32,6 +32,9 @@ jobs:
     - name: Run tests with pytest
       run: |
         pytest tests/ -v --tb=short --cov=notetime --cov-report=xml --cov-report=term
+      env:
+        SECRET_KEY: test-secret-key-for-ci
+        COOKIE_SECURE: "false"
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -64,12 +67,10 @@ jobs:
     - name: Run Ruff linter
       run: |
         ruff check notetime/ tests/ --select E,F,W,I --ignore E501
-      continue-on-error: true
 
     - name: Run Ruff formatter check
       run: |
         ruff format notetime/ tests/ --check
-      continue-on-error: true
 
   security:
     name: Security Scan
@@ -93,12 +94,10 @@ jobs:
       run: |
         pip install -r requirements.txt
         safety check --json
-      continue-on-error: true
 
     - name: Run Bandit security scan
       run: |
         bandit -r notetime/ -f json -o bandit-report.json
-      continue-on-error: true
 
   build:
     name: Build Check

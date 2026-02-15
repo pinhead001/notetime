@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import Optional
 from enum import Enum
 from sqlalchemy import Integer, String, Date, Boolean, ForeignKey, DateTime, Time
@@ -55,9 +55,9 @@ class User(Base):
     # We never store the raw password — only the hashed version.
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
 
-    # insert_default=datetime.utcnow  → DB/SQLAlchemy sets this automatically
+    # insert_default=lambda: datetime.now(timezone.utc)  → DB/SQLAlchemy sets this automatically
     # on INSERT; we don't pass it in __init__.
-    created_at: Mapped[datetime] = mapped_column(DateTime, insert_default=datetime.utcnow, init=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, insert_default=lambda: datetime.now(timezone.utc), init=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships — not real columns; SQLAlchemy loads related rows on demand.
@@ -232,4 +232,4 @@ class Feedback(Base):
 
     # Tracks triage status of this feedback item (new → acknowledged → resolved…)
     status: Mapped[str] = mapped_column(String, default="new")
-    submitted_at: Mapped[datetime] = mapped_column(DateTime, insert_default=datetime.utcnow, init=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, insert_default=lambda: datetime.now(timezone.utc), init=False)
