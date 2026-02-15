@@ -4,10 +4,11 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
+import bcrypt as _bcrypt
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.orm import Session
 
@@ -44,13 +45,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 # ---------------------------------------------------------------------------
 # Password hashing
 # ---------------------------------------------------------------------------
-# We use bcrypt (via passlib) because it's slow by design — brute-forcing
+# We use bcrypt directly because it's slow by design — brute-forcing
 # it is expensive even if an attacker gets the hash database.
-#
-# CryptContext handles the bcrypt work: hashing and verifying passwords.
-# deprecated="auto" means old hash formats are automatically re-hashed on
-# the next login.
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# passlib 1.7.4 is incompatible with bcrypt >= 4.0, so we call bcrypt directly.
 
 # HTTPBearer parses the "Authorization: Bearer <token>" header that API
 # clients send. Used below in get_current_user.
@@ -75,13 +72,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
     # Re-apply the same SHA256 first-pass, then let bcrypt compare.
     sha256_hash = _hash_password_input(plain_password)
-    return pwd_context.verify(sha256_hash, hashed_password)
+    return _bcrypt.checkpw(sha256_hash.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password using SHA256 first-pass, then bcrypt"""
     sha256_hash = _hash_password_input(password)
-    return pwd_context.hash(sha256_hash)
+    salt = _bcrypt.gensalt()
+    return _bcrypt.hashpw(sha256_hash.encode("utf-8"), salt).decode("utf-8")
 
 
 # ---------------------------------------------------------------------------

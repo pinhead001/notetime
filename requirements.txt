@@ -12,7 +12,7 @@ python-multipart==0.0.6
 psycopg2-binary==2.9.9
 
 # Authentication
-passlib[bcrypt]==1.7.4
+bcrypt>=4.0.0
 python-jose[cryptography]==3.3.0
 
 # Testing
