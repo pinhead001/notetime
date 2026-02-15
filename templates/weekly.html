@@ -19,6 +19,10 @@
                 <a href="/auth/logout" class="btn-logout">Logout</a>
             </div>
             <h1>Notetime</h1>
+            <div class="text-mode-toggle">
+                <label for="text-mode-switch">Text mode</label>
+                <input id="text-mode-switch" type="checkbox" aria-label="Toggle text mode" />
+            </div>
             <p class="week-label">Week of {{ week.start_date }}</p>
             {% if week.note %}
             <p class="week-note">{{ week.note }}</p>
@@ -210,17 +214,14 @@
                                 title="Delete">×</button>
                     </div>
 
-                    <div class="task-content {% if task.state == 'completed' %}completed-text{% endif %}">
-                        <span class="task-title" data-editable="true">{{ task.title }}</span>
-                        {% if task.delegate %}
-                        <span class="task-delegate">
-                            {{ task.delegate }}
-                            <button class="undelegate-btn"
-                                    onclick="undelegateTask({{ task.id }}); event.stopPropagation();"
-                                    title="Undelegate this task">×</button>
-                        </span>
-                        {% endif %}
-                        <span class="task-meta">
+                    <div class="task-content-row {% if task.state == 'completed' %}completed-text{% endif %}">
+                        <div class="task-content-left">
+                            <span class="task-title" data-editable="true">{{ task.title }}</span>
+                            {% if task.delegate %}
+                            <span class="task-delegate">{{ task.delegate }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="task-meta-right">
                             {% if task.project_id and projects %}
                                 {% for project in projects %}
                                     {% if project.id == task.project_id %}
@@ -230,7 +231,7 @@
                             {% endif %}
                             <span class="priority-badge">P{{ task.priority }}</span>
                             <span class="state-badge state-{{ task.state }}">{{ task.state }}</span>
-                        </span>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}
@@ -1398,6 +1399,27 @@
                 enableWorkEntryEdit(this, entryId, fieldName);
             });
         });
+
+        // Text mode toggle: hide interactive controls and use handwritten styling
+        (function() {
+            const switchEl = document.getElementById('text-mode-switch');
+            if (!switchEl) return;
+
+            function applyTextMode(enabled) {
+                if (enabled) document.body.classList.add('text-mode');
+                else document.body.classList.remove('text-mode');
+            }
+
+            // initialize from localStorage
+            const saved = localStorage.getItem('textMode') === '1';
+            switchEl.checked = saved;
+            applyTextMode(saved);
+
+            switchEl.addEventListener('change', function() {
+                applyTextMode(this.checked);
+                localStorage.setItem('textMode', this.checked ? '1' : '0');
+            });
+        })();
     </script>
 </body>
 </html>
