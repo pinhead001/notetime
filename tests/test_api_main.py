@@ -205,7 +205,7 @@ class TestProjectAPI:
         assert data["is_active"] is False
 
     def test_delete_project(self, auth_client):
-        """Test deleting a project"""
+        """Test soft-deleting a project (sets is_active=False)"""
         # Create a project
         create_response = auth_client.post(
             "/api/projects",
@@ -213,13 +213,19 @@ class TestProjectAPI:
         )
         project_id = create_response.json()["id"]
 
-        # Delete the project
+        # Soft-delete the project
         response = auth_client.delete(f"/api/projects/{project_id}")
         assert response.status_code == 200
 
-        # Verify it's deleted
-        response = auth_client.get(f"/api/projects/{project_id}")
-        assert response.status_code == 404
+        # Project still exists (soft-deleted), GET should still return it
+        get_response = auth_client.get(f"/api/projects/{project_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["is_active"] is False
+
+        # Should not appear in the default active-only project list
+        list_response = auth_client.get("/api/projects")
+        project_ids = [p["id"] for p in list_response.json()]
+        assert project_id not in project_ids
 
 
 class TestTaskAPI:
@@ -518,3 +524,268 @@ class TestUnauthorizedAccess:
             json={"title": "Test Task", "week_id": 1}
         )
         assert response.status_code == 401
+
+
+class TestNewTaskEndpoints:
+    """Tests for delete, uncomplete, move-up, move-down, and list-all-tasks"""
+
+    def _setup_week_and_tasks(self, auth_client, num_tasks=2):
+        """Helper: create a week and num_tasks tasks; return (week_id, [task_id, ...])"""
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        week_resp = auth_client.post(
+            "/api/weeks", json={"start_date": week_start.isoformat()}
+        )
+        week_id = week_resp.json()["id"]
+        task_ids = []
+        for i in range(num_tasks):
+            resp = auth_client.post(
+                "/api/tasks",
+                json={"title": f"Task {i + 1}", "week_id": week_id}
+            )
+            task_ids.append(resp.json()["id"])
+        return week_id, task_ids
+
+    def test_delete_task(self, auth_client):
+        """DELETE /api/tasks/{id} removes the task"""
+        _, (task_id,) = self._setup_week_and_tasks(auth_client, num_tasks=1)
+        response = auth_client.delete(f"/api/tasks/{task_id}")
+        assert response.status_code == 200
+        assert response.json()["message"] == "Task deleted"
+
+        # Subsequent GET should 404
+        get_resp = auth_client.get(f"/api/tasks/{task_id}")
+        assert get_resp.status_code == 404
+
+    def test_uncomplete_task(self, auth_client):
+        """PUT /api/tasks/{id}/uncomplete restores a completed task to active"""
+        _, (task_id,) = self._setup_week_and_tasks(auth_client, num_tasks=1)
+
+        # First complete it
+        auth_client.put(f"/api/tasks/{task_id}", json={"state": "completed"})
+
+        # Then uncomplete
+        response = auth_client.put(f"/api/tasks/{task_id}/uncomplete")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["state"] == "active"
+
+        # Verify via GET
+        get_resp = auth_client.get(f"/api/tasks/{task_id}")
+        assert get_resp.json()["state"] == "active"
+
+    def test_move_task_up(self, auth_client):
+        """POST /api/tasks/{id}/move-up swaps sort_order with the task above"""
+        _, (task1_id, task2_id) = self._setup_week_and_tasks(auth_client, num_tasks=2)
+
+        # task1 is at index 0, task2 at index 1; move task2 up
+        response = auth_client.post(f"/api/tasks/{task2_id}/move-up")
+        assert response.status_code == 200
+        assert response.json()["message"] == "Moved up"
+
+    def test_move_task_up_already_at_top(self, auth_client):
+        """Moving the topmost task up should say 'Already at top'"""
+        _, (task1_id, _) = self._setup_week_and_tasks(auth_client, num_tasks=2)
+        response = auth_client.post(f"/api/tasks/{task1_id}/move-up")
+        assert response.status_code == 200
+        assert response.json()["message"] == "Already at top"
+
+    def test_move_task_down(self, auth_client):
+        """POST /api/tasks/{id}/move-down swaps sort_order with the task below"""
+        _, (task1_id, task2_id) = self._setup_week_and_tasks(auth_client, num_tasks=2)
+
+        response = auth_client.post(f"/api/tasks/{task1_id}/move-down")
+        assert response.status_code == 200
+        assert response.json()["message"] == "Moved down"
+
+    def test_move_task_down_already_at_bottom(self, auth_client):
+        """Moving the bottom task down should say 'Already at bottom'"""
+        _, (_, task2_id) = self._setup_week_and_tasks(auth_client, num_tasks=2)
+        response = auth_client.post(f"/api/tasks/{task2_id}/move-down")
+        assert response.status_code == 200
+        assert response.json()["message"] == "Already at bottom"
+
+    def test_list_all_tasks(self, auth_client):
+        """GET /api/tasks returns all tasks for the user across all weeks"""
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        week_resp = auth_client.post(
+            "/api/weeks", json={"start_date": week_start.isoformat()}
+        )
+        week_id = week_resp.json()["id"]
+        auth_client.post("/api/tasks", json={"title": "T1", "week_id": week_id})
+        auth_client.post("/api/tasks", json={"title": "T2", "week_id": week_id})
+
+        response = auth_client.get("/api/tasks")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+
+    def test_get_task_api_prefix(self, auth_client):
+        """GET /api/tasks/{id} returns the task"""
+        _, (task_id,) = self._setup_week_and_tasks(auth_client, num_tasks=1)
+        response = auth_client.get(f"/api/tasks/{task_id}")
+        assert response.status_code == 200
+        assert response.json()["id"] == task_id
+
+    def test_quick_add_task(self, auth_client):
+        """POST /api/quick-add with a task entry string creates a task"""
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        week_resp = auth_client.post(
+            "/api/weeks", json={"start_date": week_start.isoformat()}
+        )
+        week_id = week_resp.json()["id"]
+
+        response = auth_client.post(
+            "/api/quick-add",
+            data={"text": "P1 Deploy new feature", "week_id": week_id}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "task"
+        assert "task_id" in data
+
+    def test_quick_add_time_log(self, auth_client):
+        """POST /api/quick-add with a time entry string creates a work entry"""
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        week_resp = auth_client.post(
+            "/api/weeks", json={"start_date": week_start.isoformat()}
+        )
+        week_id = week_resp.json()["id"]
+
+        response = auth_client.post(
+            "/api/quick-add",
+            data={"text": "2h worked on bug fix", "week_id": week_id}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "time_log"
+        assert data["minutes"] == 120
+
+
+class TestListWorkEntriesAPI:
+    """Tests for GET /api/work_entries (list all user work entries)"""
+
+    def test_list_all_work_entries(self, auth_client):
+        """GET /api/work_entries returns all entries for the user"""
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        week_resp = auth_client.post(
+            "/api/weeks", json={"start_date": week_start.isoformat()}
+        )
+        week_id = week_resp.json()["id"]
+
+        task_resp = auth_client.post(
+            "/api/tasks", json={"title": "My Task", "week_id": week_id}
+        )
+        task_id = task_resp.json()["id"]
+
+        today = date.today()
+        auth_client.post(
+            "/api/work_entries",
+            json={"task_id": task_id, "date": today.isoformat(), "minutes": 60}
+        )
+        auth_client.post(
+            "/api/work_entries",
+            json={"task_id": task_id, "date": today.isoformat(), "minutes": 90}
+        )
+
+        response = auth_client.get("/api/work_entries")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+
+    def test_list_work_entries_empty(self, auth_client):
+        """GET /api/work_entries returns empty list when no entries exist"""
+        response = auth_client.get("/api/work_entries")
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+class TestWeekCSVExport:
+    """Tests for GET /api/weeks/{week_id}/export"""
+
+    def test_export_week_csv(self, auth_client):
+        """Export returns a CSV file with correct content-type and rows"""
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        week_resp = auth_client.post(
+            "/api/weeks", json={"start_date": week_start.isoformat()}
+        )
+        week_id = week_resp.json()["id"]
+
+        task_resp = auth_client.post(
+            "/api/tasks", json={"title": "Export Task", "week_id": week_id}
+        )
+        task_id = task_resp.json()["id"]
+
+        today = date.today()
+        auth_client.post(
+            "/api/work_entries",
+            json={"task_id": task_id, "date": today.isoformat(), "minutes": 45,
+                  "note": "Test note"}
+        )
+
+        response = auth_client.get(f"/api/weeks/{week_id}/export")
+        assert response.status_code == 200
+        assert "text/csv" in response.headers["content-type"]
+        assert "attachment" in response.headers.get("content-disposition", "")
+
+        lines = response.text.strip().splitlines()
+        assert lines[0] == "date,task,project,minutes,hours,start_time,end_time,note"
+        assert len(lines) == 2  # header + 1 data row
+        assert "Export Task" in lines[1]
+        assert "45" in lines[1]
+
+    def test_export_week_csv_no_entries(self, auth_client):
+        """Export of a week with no work entries returns only header row"""
+        week_start = date.today() - timedelta(days=date.today().weekday())
+        week_resp = auth_client.post(
+            "/api/weeks", json={"start_date": week_start.isoformat()}
+        )
+        week_id = week_resp.json()["id"]
+
+        response = auth_client.get(f"/api/weeks/{week_id}/export")
+        assert response.status_code == 200
+        lines = response.text.strip().splitlines()
+        assert len(lines) == 1  # header only
+
+    def test_export_week_not_found(self, auth_client):
+        """Export of a non-existent week returns 404"""
+        response = auth_client.get("/api/weeks/99999/export")
+        assert response.status_code == 404
+
+
+class TestProjectSoftDelete:
+    """Tests that project delete is a soft-delete"""
+
+    def test_delete_project_sets_inactive(self, auth_client):
+        """DELETE /api/projects/{id} sets is_active=False, not removes row"""
+        proj_resp = auth_client.post(
+            "/api/projects", json={"name": "SoftDelete Project"}
+        )
+        proj_id = proj_resp.json()["id"]
+
+        # Delete it
+        del_resp = auth_client.delete(f"/api/projects/{proj_id}")
+        assert del_resp.status_code == 200
+
+        # It should now be excluded from the default active-only list
+        list_resp = auth_client.get("/api/projects")
+        names = [p["name"] for p in list_resp.json()]
+        assert "SoftDelete Project" not in names
+
+        # But visible when requesting all projects (active_only=false)
+        all_resp = auth_client.get("/api/projects?active_only=false")
+        all_names = [p["name"] for p in all_resp.json()]
+        assert "SoftDelete Project" in all_names
+
+    def test_deleted_project_is_inactive(self, auth_client):
+        """The soft-deleted project has is_active=False"""
+        proj_resp = auth_client.post(
+            "/api/projects", json={"name": "Inactive Project"}
+        )
+        proj_id = proj_resp.json()["id"]
+        auth_client.delete(f"/api/projects/{proj_id}")
+
+        all_resp = auth_client.get("/api/projects?active_only=false")
+        proj = next(p for p in all_resp.json() if p["id"] == proj_id)
+        assert proj["is_active"] is False

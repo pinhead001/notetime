@@ -10,11 +10,13 @@ API will be available at:
     http://localhost:8000/docs (API docs)
     http://localhost:8000 (Web UI)
 """
+import csv
+import io
 from datetime import date, timedelta
 from typing import List, Optional
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Form, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -426,6 +428,79 @@ async def list_tasks_for_week_api(
     return tasks
 
 
+@app.get("/api/weeks/{week_id}/export")
+async def export_week_csv(
+    week_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Export the week's time log as a CSV file.
+
+    Returns a CSV with columns: date, task, project, minutes, hours (rounded),
+    start_time, end_time, note.
+
+    Raises:
+        404: If week not found or doesn't belong to user
+    """
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Week with id {week_id} not found"
+        )
+
+    tasks = db.scalars(select(Task).where(Task.week_id == week_id)).all()
+    task_map = {t.id: t for t in tasks}
+
+    project_ids = list(set(t.project_id for t in tasks if t.project_id))
+    project_map: dict = {}
+    if project_ids:
+        projects = db.scalars(
+            select(Project).where(Project.id.in_(project_ids))
+        ).all()
+        project_map = {p.id: p.name for p in projects}
+
+    task_ids = [t.id for t in tasks]
+    work_entries = []
+    if task_ids:
+        work_entries = db.scalars(
+            select(WorkEntry)
+            .where(WorkEntry.task_id.in_(task_ids))
+            .order_by(WorkEntry.date, WorkEntry.id)
+        ).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["date", "task", "project", "minutes", "hours", "start_time", "end_time", "note"])
+
+    for entry in work_entries:
+        task = task_map.get(entry.task_id)
+        task_title = task.title if task else ""
+        project_name = project_map.get(task.project_id, "") if task and task.project_id else ""
+        hours = round(entry.minutes / 60, 2)
+        start = entry.start_time.strftime("%H:%M") if entry.start_time else ""
+        end = entry.end_time.strftime("%H:%M") if entry.end_time else ""
+        writer.writerow([
+            entry.date.isoformat(),
+            task_title,
+            project_name,
+            entry.minutes,
+            hours,
+            start,
+            end,
+            entry.note or "",
+        ])
+
+    output.seek(0)
+    filename = f"notetime-week-{week.start_date}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ============================================
 # Project API Endpoints
 # ============================================
@@ -543,14 +618,14 @@ async def delete_project_api(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete a project."""
+    """Soft-delete a project (sets is_active=False, preserves task history)."""
     project = db.get(Project, project_id)
     if not project or project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Project with id {project_id} not found"
         )
-    db.delete(project)
+    project.is_active = False
     db.commit()
     return {"message": "Project deleted"}
 
@@ -657,6 +732,42 @@ async def update_task_api(
 
     db.commit()
     db.refresh(db_task)
+    return db_task
+
+
+@app.get("/api/tasks", response_model=List[TaskResponse])
+async def list_tasks_api(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all tasks for the authenticated user across all weeks.
+
+    Returns:
+        List of all tasks belonging to the user
+    """
+    tasks = db.scalars(
+        select(Task)
+        .join(Week, Task.week_id == Week.id)
+        .where(Week.user_id == current_user.id)
+        .order_by(Task.week_id.desc(), Task.sort_order, Task.id)
+    ).all()
+    return tasks
+
+
+@app.get("/api/tasks/{task_id}", response_model=TaskResponse)
+async def get_task_api(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific task by ID."""
+    db_task = db.get(Task, task_id)
+    if not db_task or db_task.week.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {task_id} not found"
+        )
     return db_task
 
 
@@ -854,6 +965,27 @@ async def delete_work_entry_api(
     db.delete(db_entry)
     db.commit()
     return {"message": "Work entry deleted"}
+
+
+@app.get("/api/work_entries", response_model=List[WorkEntryResponse])
+async def list_work_entries_api(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all work entries for the authenticated user across all tasks.
+
+    Returns:
+        List of all work entries belonging to the user
+    """
+    entries = db.scalars(
+        select(WorkEntry)
+        .join(Task, WorkEntry.task_id == Task.id)
+        .join(Week, Task.week_id == Week.id)
+        .where(Week.user_id == current_user.id)
+        .order_by(WorkEntry.date.desc(), WorkEntry.id.desc())
+    ).all()
+    return entries
 
 
 @app.get("/work_entries/{entry_id}", response_model=WorkEntryResponse)
