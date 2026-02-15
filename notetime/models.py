@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Optional
 from enum import Enum
-from sqlalchemy import Integer, String, Date, Boolean, ForeignKey, DateTime
+from sqlalchemy import Integer, String, Date, Boolean, ForeignKey, DateTime, Time
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from notetime.db import Base
 
@@ -160,6 +160,12 @@ class Task(Base):
     # delegate stores a person's name as a plain string (not a User FK).
     delegate: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
+    # Optional parent task for subtask hierarchy.
+    parent_task_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tasks.id"), nullable=True, default=None)
+
+    # Explicit ordering within the week; lower value = higher in the list.
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
     week: Mapped["Week"] = relationship("Week", back_populates="tasks", init=False)
     project: Mapped[Optional["Project"]] = relationship("Project", back_populates="tasks", init=False)
 
@@ -190,6 +196,11 @@ class WorkEntry(Base):
     # Rounding happens in time_engine.py when generating the summary.
     minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+
+    # Optional clock times for display (e.g. "9:00 – 11:00").
+    # These are informational only; minutes is the authoritative duration.
+    start_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True, default=None)
+    end_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True, default=None)
 
     task: Mapped["Task"] = relationship("Task", back_populates="work_entries", init=False)
 

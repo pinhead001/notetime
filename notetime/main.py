@@ -32,6 +32,7 @@ from notetime.schemas import (
     FeedbackCreate, FeedbackResponse
 )
 from notetime.summary import generate_weekly_summary
+from notetime.nl_parser import parse_entry, EntryType
 from notetime.auth import (
     get_password_hash, verify_password, create_access_token,
     get_current_user, get_optional_current_user
@@ -593,6 +594,15 @@ async def create_task_api(
                 detail=f"Project with id {task_data.project_id} not found"
             )
 
+    # Assign sort_order: place new task at the end of the week's list.
+    if task_data.sort_order == 0:
+        max_order = db.scalars(
+            select(Task.sort_order).where(Task.week_id == task_data.week_id)
+        ).all()
+        sort_order = (max(max_order) + 1) if max_order else 0
+    else:
+        sort_order = task_data.sort_order
+
     # Create task
     db_task = Task(
         title=task_data.title,
@@ -600,7 +610,9 @@ async def create_task_api(
         state=task_data.state,
         priority=task_data.priority,
         project_id=task_data.project_id,
-        delegate=task_data.delegate
+        delegate=task_data.delegate,
+        parent_task_id=task_data.parent_task_id,
+        sort_order=sort_order,
     )
     db.add(db_task)
     db.commit()
@@ -638,6 +650,10 @@ async def update_task_api(
         db_task.priority = task_data.priority
     if task_data.delegate is not None:
         db_task.delegate = task_data.delegate
+    if task_data.parent_task_id is not None:
+        db_task.parent_task_id = task_data.parent_task_id
+    if task_data.sort_order is not None:
+        db_task.sort_order = task_data.sort_order
 
     db.commit()
     db.refresh(db_task)
@@ -746,7 +762,9 @@ async def create_work_entry_api(
         task_id=entry_data.task_id,
         date=entry_data.date,
         minutes=entry_data.minutes,
-        note=entry_data.note
+        note=entry_data.note,
+        start_time=entry_data.start_time,
+        end_time=entry_data.end_time,
     )
     db.add(db_entry)
     db.commit()
@@ -802,6 +820,10 @@ async def update_work_entry_api(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Work entry with id {entry_id} not found"
         )
+    if entry_data.start_time is not None:
+        db_entry.start_time = entry_data.start_time
+    if entry_data.end_time is not None:
+        db_entry.end_time = entry_data.end_time
     if entry_data.minutes is not None:
         if entry_data.minutes <= 0:
             raise HTTPException(
@@ -1267,16 +1289,16 @@ async def task_form_partial(
             <option value="3" selected>Priority 3 (Normal)</option>
         </select>
         <button type="submit">Add Task</button>
-        <button type="button" hx-get="/partials/task-form-cancel" hx-target="#add-task-container">Cancel</button>
+        <button type="button" hx-get="/partials/task-form-cancel?week_id={week_id}" hx-target="#add-task-container">Cancel</button>
     </form>
     """
     return HTMLResponse(content=html)
 
 
 @app.get("/partials/task-form-cancel", response_class=HTMLResponse)
-async def task_form_cancel():
+async def task_form_cancel(week_id: int = 0):
     """Cancel task form"""
-    html = '<button hx-get="/partials/task-form?week_id=1" hx-target="#add-task-container" hx-swap="innerHTML" class="btn-add">+ New Task</button>'
+    html = f'<button hx-get="/partials/task-form?week_id={week_id}" hx-target="#add-task-container" hx-swap="innerHTML" class="btn-add">+ New Task</button>'
     return HTMLResponse(content=html)
 
 
@@ -1305,16 +1327,16 @@ async def log_form_partial(
         <input type="number" name="minutes" placeholder="Minutes worked" min="1" required>
         <textarea name="note" placeholder="Note (optional)" rows="2"></textarea>
         <button type="submit">Log Time</button>
-        <button type="button" hx-get="/partials/log-form-cancel" hx-target="#add-log-container">Cancel</button>
+        <button type="button" hx-get="/partials/log-form-cancel?week_id={week_id}" hx-target="#add-log-container">Cancel</button>
     </form>
     """
     return HTMLResponse(content=html)
 
 
 @app.get("/partials/log-form-cancel", response_class=HTMLResponse)
-async def log_form_cancel():
+async def log_form_cancel(week_id: int = 0):
     """Cancel log form"""
-    html = '<button hx-get="/partials/log-form?week_id=1" hx-target="#add-log-container" hx-swap="innerHTML" class="btn-add">+ Log Time</button>'
+    html = f'<button hx-get="/partials/log-form?week_id={week_id}" hx-target="#add-log-container" hx-swap="innerHTML" class="btn-add">+ Log Time</button>'
     return HTMLResponse(content=html)
 
 
@@ -1354,6 +1376,230 @@ async def defer_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     return HTMLResponse(content=f'<div class="task-item">→ {task.title} (Will be moved to next week)</div>')
+
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task_api(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a task and all its time entries."""
+    db_task = db.get(Task, task_id)
+    if not db_task or db_task.week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task with id {task_id} not found")
+    db.delete(db_task)
+    db.commit()
+    return {"message": "Task deleted"}
+
+
+@app.put("/api/tasks/{task_id}/uncomplete")
+async def uncomplete_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Set a completed task back to active."""
+    task = db.get(Task, task_id)
+    if not task or task.week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    task.state = TaskState.ACTIVE.value
+    db.commit()
+    return {"message": "Task set to active", "task_id": task_id, "state": task.state}
+
+
+@app.post("/api/tasks/{task_id}/move-up")
+async def move_task_up(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Move a task up in sort order within its week."""
+    task = db.get(Task, task_id)
+    if not task or task.week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    # Get all sibling tasks (same week, no parent) ordered by sort_order, then id
+    siblings = db.scalars(
+        select(Task)
+        .where(Task.week_id == task.week_id)
+        .order_by(Task.sort_order, Task.id)
+    ).all()
+
+    idx = next((i for i, t in enumerate(siblings) if t.id == task_id), None)
+    if idx is None or idx == 0:
+        return {"message": "Already at top"}
+
+    prev_task = siblings[idx - 1]
+    # Swap sort_orders
+    task.sort_order, prev_task.sort_order = prev_task.sort_order, task.sort_order
+    # If they were equal, force a distinct ordering
+    if task.sort_order == prev_task.sort_order:
+        prev_task.sort_order = task.sort_order + 1
+    db.commit()
+    return {"message": "Moved up"}
+
+
+@app.post("/api/tasks/{task_id}/move-down")
+async def move_task_down(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Move a task down in sort order within its week."""
+    task = db.get(Task, task_id)
+    if not task or task.week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    siblings = db.scalars(
+        select(Task)
+        .where(Task.week_id == task.week_id)
+        .order_by(Task.sort_order, Task.id)
+    ).all()
+
+    idx = next((i for i, t in enumerate(siblings) if t.id == task_id), None)
+    if idx is None or idx == len(siblings) - 1:
+        return {"message": "Already at bottom"}
+
+    next_task = siblings[idx + 1]
+    task.sort_order, next_task.sort_order = next_task.sort_order, task.sort_order
+    if task.sort_order == next_task.sort_order:
+        task.sort_order = next_task.sort_order + 1
+    db.commit()
+    return {"message": "Moved down"}
+
+
+@app.post("/api/quick-add")
+async def quick_add(
+    text: str = Form(...),
+    week_id: int = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Parse a natural-language entry and create a task or work entry.
+
+    Examples:
+      "P1 deploy feature"        → priority-1 task
+      "9-11 client meeting"      → 2-hour work entry
+      "2h fixed bug @API"        → 2-hour entry tagged to project API
+
+    Returns JSON with {"type": "task"|"time_log", ...}
+    """
+    week = db.get(Week, week_id)
+    if not week or week.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Week not found")
+
+    parsed = parse_entry(text, week_id)
+
+    if parsed["type"] == EntryType.TASK:
+        data = parsed["data"]
+
+        # Resolve project name to ID if provided
+        project_id = None
+        project_name = data.get("project_name")
+        if project_name:
+            project = db.scalars(
+                select(Project).where(
+                    Project.name == project_name,
+                    Project.user_id == current_user.id,
+                    Project.is_active == True,
+                )
+            ).first()
+            if not project:
+                project = Project(name=project_name, user_id=current_user.id)
+                db.add(project)
+                db.flush()
+            project_id = project.id
+
+        # Assign sort_order
+        max_orders = db.scalars(select(Task.sort_order).where(Task.week_id == week_id)).all()
+        sort_order = (max(max_orders) + 1) if max_orders else 0
+
+        db_task = Task(
+            title=data["title"],
+            week_id=week_id,
+            state=data.get("state", "active"),
+            priority=data.get("priority", 3),
+            project_id=project_id,
+            sort_order=sort_order,
+        )
+        db.add(db_task)
+        db.commit()
+        db.refresh(db_task)
+        return {"type": "task", "task_id": db_task.id, "title": db_task.title}
+
+    elif parsed["type"] == EntryType.TIME_LOG:
+        data = parsed["data"]
+
+        # Resolve or create project
+        project_id = None
+        project_name = data.get("project_name")
+        if project_name:
+            project = db.scalars(
+                select(Project).where(
+                    Project.name == project_name,
+                    Project.user_id == current_user.id,
+                    Project.is_active == True,
+                )
+            ).first()
+            if not project:
+                project = Project(name=project_name, user_id=current_user.id)
+                db.add(project)
+                db.flush()
+            project_id = project.id
+
+        # Resolve or create task
+        task_id = data.get("task_id")
+        task_name = data.get("task_name")
+        note = data.get("note") or ""
+
+        if task_id is None:
+            # Try to find an existing task by name; fall back to creating one
+            lookup_title = task_name or (note[:50] if note else "Untitled")
+            existing_task = db.scalars(
+                select(Task).where(
+                    Task.week_id == week_id,
+                    Task.title == lookup_title,
+                )
+            ).first()
+            if existing_task:
+                task_id = existing_task.id
+            else:
+                max_orders = db.scalars(select(Task.sort_order).where(Task.week_id == week_id)).all()
+                sort_order = (max(max_orders) + 1) if max_orders else 0
+                new_task = Task(
+                    title=lookup_title,
+                    week_id=week_id,
+                    state="active",
+                    priority=3,
+                    project_id=project_id,
+                    sort_order=sort_order,
+                )
+                db.add(new_task)
+                db.flush()
+                task_id = new_task.id
+
+        minutes = data.get("minutes", 0)
+        if minutes <= 0:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="Could not determine a positive duration from that entry.")
+
+        db_entry = WorkEntry(
+            task_id=task_id,
+            date=data.get("date"),
+            minutes=minutes,
+            note=note or None,
+            start_time=data.get("start_time"),
+            end_time=data.get("end_time"),
+        )
+        db.add(db_entry)
+        db.commit()
+        db.refresh(db_entry)
+        return {"type": "time_log", "entry_id": db_entry.id, "minutes": db_entry.minutes}
+
+    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Could not parse entry. Try '9-11 worked on X', '2h fixed bug', or 'P1 task title'.")
 
 
 # ============================================
@@ -1497,7 +1743,7 @@ async def api_help():
             "auth": [
                 {"method": "POST", "path": "/api/auth/register",
                  "description": "Create a new account",
-                 "body": {"email": "str", "username": "str", "password": "str (min 6 chars)"}},
+                 "body": {"email": "str", "username": "str", "password": "str (min 8 chars)"}},
                 {"method": "POST", "path": "/api/auth/login",
                  "description": "Log in and receive a JWT token",
                  "body": {"username": "str", "password": "str"}},
@@ -1549,9 +1795,19 @@ async def api_help():
                 {"method": "DELETE", "path": "/api/tasks/{task_id}",
                  "description": "Delete a task and all its time entries"},
                 {"method": "PUT", "path": "/api/tasks/{task_id}/complete",
-                 "description": "Toggle a task between completed and active"},
+                 "description": "Mark a task as completed"},
+                {"method": "PUT", "path": "/api/tasks/{task_id}/uncomplete",
+                 "description": "Revert a completed task back to active"},
                 {"method": "PUT", "path": "/api/tasks/{task_id}/defer",
                  "description": "Defer a task to the following week"},
+                {"method": "POST", "path": "/api/tasks/{task_id}/move-up",
+                 "description": "Move a task up in the sort order within its week"},
+                {"method": "POST", "path": "/api/tasks/{task_id}/move-down",
+                 "description": "Move a task down in the sort order within its week"},
+                {"method": "POST", "path": "/api/quick-add",
+                 "description": "Parse a natural-language entry and create a task or log time",
+                 "body": {"text": "str (e.g. '9-11 client meeting', 'P1 deploy feature', '2h fixed bug @API')",
+                          "week_id": "int"}},
             ],
             "work_entries": [
                 {"method": "GET", "path": "/api/work_entries",

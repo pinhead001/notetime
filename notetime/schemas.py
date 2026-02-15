@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Optional, List, Literal
 from pydantic import BaseModel, field_validator, ConfigDict, EmailStr
 
@@ -118,6 +118,8 @@ class TaskCreate(BaseModel):
     priority: int = 3
     project_id: Optional[int] = None   # None = no project
     delegate: Optional[str] = None     # Free-text name of person task is delegated to
+    parent_task_id: Optional[int] = None  # Parent for subtask hierarchy
+    sort_order: int = 0                   # Explicit position within the week
 
 
 # ------------------------------
@@ -128,6 +130,8 @@ class WorkEntryCreate(BaseModel):
     date: date
     minutes: int
     note: str | None = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
 
     @field_validator("minutes")
     @classmethod
@@ -153,11 +157,15 @@ class TaskUpdate(BaseModel):
     state: Optional[str] = None
     priority: Optional[int] = None
     delegate: Optional[str] = None
+    parent_task_id: Optional[int] = None
+    sort_order: Optional[int] = None
 
 
 class WorkEntryUpdate(BaseModel):
     minutes: Optional[int] = None
     note: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
 
 
 # ------------------------------
@@ -212,6 +220,8 @@ class TaskResponse(BaseModel):
     priority: int
     project_id: Optional[int] = None
     delegate: Optional[str] = None
+    parent_task_id: Optional[int] = None
+    sort_order: int = 0
 
 
 # ------------------------------
@@ -226,6 +236,8 @@ class WorkEntryResponse(BaseModel):
     date: date
     minutes: int
     note: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
 
 
 # ------------------------------
