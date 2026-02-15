@@ -15,6 +15,11 @@ body {
     padding: 20px;
 }
 
+/* Handwritten / 'text' styling using Kalam (loaded in template) */
+.handwritten, input.handwritten, textarea.handwritten, .task-title {
+    font-family: 'Kalam', cursive;
+}
+
 /* Container - Paper Sheet */
 .container {
     max-width: 1000px;
@@ -188,6 +193,49 @@ h2 {
     gap: 10px;
     margin-top: 10px;
 }
+
+/* Smaller compact buttons used next to tasks */
+.pm-btn {
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    border-radius: 6px;
+    background: #ecf0f1;
+    color: #2c3e50;
+    border: 1px solid rgba(0,0,0,0.06);
+}
+
+.pm-btn:hover { transform: translateY(-1px); }
+
+/* Task row layout: actions left, title center, badges right */
+.task-content-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+}
+.task-content-left { flex: 1 1 auto; display:flex; flex-direction:column; }
+.task-meta-right { display:flex; gap:8px; align-items:center; flex: 0 0 auto; }
+
+/* Make quick-add input span remaining width */
+.quick-add-input-wrapper { flex: 1 1 auto; }
+.quick-add-container { display:flex; gap:12px; align-items:center; }
+.quick-add-input { width:100%; padding:10px; font-size:1rem; }
+
+/* Log badges aligned right */
+.timeline-content { display:flex; align-items:center; gap:12px; }
+.log-badges { margin-left: auto; display:flex; gap:8px; align-items:center; }
+
+/* Text mode: hide certain interactive buttons */
+.text-mode .btn-add, .text-mode .delete-log-btn, .text-mode .pm-delegate {
+    display: none !important;
+}
+
+/* Make typed text look more handwritten across inputs and textareas */
+input, textarea, .task-title { font-family: 'Kalam', cursive; }
+
+/* Slightly reduce global button size for compact UI */
+button, .btn-add, .btn-small { padding:6px 10px; font-size:0.9rem; }
 
 /* Daily Log */
 .log-entries {
