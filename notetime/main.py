@@ -80,6 +80,46 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+# Ensure DB schema compatibility on startup (add missing columns if needed).
+# This is a light-weight safety net for dev/docker environments where the
+# database may be from an older schema. It avoids crashing the app when a
+# single column is missing by adding it non-destructively.
+from sqlalchemy import text
+
+
+@app.on_event("startup")
+def ensure_db_columns():
+    """Add missing columns used by the current code if they don't exist."""
+    # Only run when using a real SQL DB (engine configured in notetime.db)
+    try:
+        with engine.begin() as conn:
+            # parent_task_id was added in a schema update; some DBs may still
+            # be on the old schema. Add the column if it's missing.
+            # Add parent_task_id if missing
+            try:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id INTEGER DEFAULT NULL;"))
+            except Exception:
+                try:
+                    conn.execute(text("DO $$ BEGIN ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$;"))
+                except Exception:
+                    pass
+
+            # Add sort_order column if missing (older schemas may not have it)
+            try:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;"))
+            except Exception:
+                try:
+                    conn.execute(text("DO $$ BEGIN ALTER TABLE tasks ADD COLUMN sort_order INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$;"))
+                    # Ensure existing rows have a default value
+                    conn.execute(text("UPDATE tasks SET sort_order = 0 WHERE sort_order IS NULL;"))
+                except Exception:
+                    pass
+    except Exception:
+        # If the DB isn't available at startup (transient), don't crash the
+        # whole app — the app will surface DB errors when routes run.
+        return
+
+
 # ============================================
 # Authentication Endpoints
 # ============================================
