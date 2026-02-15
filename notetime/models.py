@@ -101,6 +101,7 @@ class Week(Base):
     # Always the Monday of the week (enforced by application logic, not DB).
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
+    scratchpad: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
 
     # back_populates creates a two-way link:
     #   week.user   → the User that owns this week

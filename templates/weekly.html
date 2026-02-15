@@ -19,42 +19,36 @@
                 <a href="/auth/logout" class="btn-logout">Logout</a>
             </div>
             <h1>Notetime</h1>
-            <div class="text-mode-toggle">
-                <label for="text-mode-switch">Text mode</label>
-                <input id="text-mode-switch" type="checkbox" aria-label="Toggle text mode" />
-            </div>
+            <!-- hidden state inputs kept for JS compat -->
+            <input id="text-mode-switch" type="checkbox" aria-hidden="true" style="display:none" />
+            <input id="dark-mode-switch" type="checkbox" aria-hidden="true" style="display:none" />
             <p class="week-label">Week of {{ week.start_date }}</p>
-            {% if week.note %}
-            <p class="week-note">{{ week.note }}</p>
-            {% endif %}
-            <div class="keyboard-hints">
-                <strong>Shortcuts:</strong>
-                <button class="shortcut-btn" onclick="document.getElementById('quick-add-input').focus()" title="Press '/' to focus quick-add">
-                    <kbd>/</kbd> Quick-add
+            <input
+                id="week-note-input"
+                class="week-note-input"
+                type="text"
+                value="{{ week.note or '' }}"
+                placeholder="My goal for this week is to…"
+                data-week-id="{{ week.id }}"
+                autocomplete="off" />
+            <div class="icon-bar">
+                <button class="icon-btn" onclick="document.getElementById('quick-add-input').focus()" title="Quick-add (/)">
+                    ✏ <span class="icon-label">add</span>
                 </button>
-                <button class="shortcut-btn" onclick="triggerNewTask()" title="Press 'n' for New task">
-                    <kbd>n</kbd> New task
+                <button class="icon-btn" onclick="triggerLogTime()" title="Log time (t)">
+                    ⏱ <span class="icon-label">log</span>
                 </button>
-                <button class="shortcut-btn" onclick="triggerLogTime()" title="Press 't' for Log time">
-                    <kbd>t</kbd> Log time
+                <a class="icon-btn" href="/projects/manage" title="Projects (p)">
+                    ⊞ <span class="icon-label">projects</span>
+                </a>
+                <a class="icon-btn" href="/api/weeks/{{ week.id }}/export" title="Export CSV">
+                    ↗ <span class="icon-label">export</span>
+                </a>
+                <button class="icon-btn" id="dark-mode-btn" onclick="toggleDarkMode()" title="Toggle dark mode">
+                    ☀
                 </button>
-                <button class="shortcut-btn" onclick="window.location.href='/projects/manage'" title="Press 'p' for Projects">
-                    <kbd>p</kbd> Projects
-                </button>
-                <button class="shortcut-btn" onclick="triggerComplete()" title="Press 'x' to Complete selected task">
-                    <kbd>x</kbd> Complete
-                </button>
-                <button class="shortcut-btn" onclick="triggerDelegate()" title="Press 'd' to Delegate selected task">
-                    <kbd>d</kbd> Delegate
-                </button>
-                <button class="shortcut-btn" onclick="triggerWaiting()" title="Press 'f' to mark selected task as Waiting">
-                    <kbd>f</kbd> Waiting
-                </button>
-                <button class="shortcut-btn" title="Press ↑↓ to navigate tasks, Enter to edit, Esc to deselect">
-                    <kbd>↑↓</kbd> Navigate
-                </button>
-                <button class="shortcut-btn" onclick="window.location.href='/api/weeks/{{ week.id }}/export'" title="Export this week's data to CSV">
-                    <kbd>📊</kbd> Export CSV
+                <button class="icon-btn" id="text-mode-btn" onclick="toggleTextMode()" title="Toggle text mode">
+                    ≡
                 </button>
             </div>
         </header>
@@ -97,7 +91,7 @@
 
                         {% set project_tasks = all_tasks | selectattr('project_id', 'equalto', project.id) | selectattr('parent_task_id', 'equalto', None) | list %}
                         {% for task in project_tasks | sort(attribute='sort_order') %}
-                        <div class="pm-task" data-task-id="{{ task.id }}" tabindex="0">
+                        <div class="pm-task" data-task-id="{{ task.id }}" tabindex="0" draggable="true">
                             <div class="pm-task-controls">
                                 <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
                                         class="pm-btn pm-complete {% if task.state == 'completed' %}completed{% endif %}"
@@ -129,7 +123,7 @@
                             {% if subtasks %}
                             <div class="pm-subtasks">
                                 {% for subtask in subtasks | sort(attribute='sort_order') %}
-                                <div class="pm-subtask" data-task-id="{{ subtask.id }}" tabindex="0">
+                                <div class="pm-subtask" data-task-id="{{ subtask.id }}" tabindex="0" draggable="true">
                                     <div class="pm-task-controls">
                                         <button onclick="toggleComplete({{ subtask.id }}, '{{ subtask.state }}'); event.stopPropagation();"
                                                 class="pm-btn pm-complete {% if subtask.state == 'completed' %}completed{% endif %}"
@@ -192,7 +186,8 @@
                 <div class="task-item task-{{ task.state }}"
                      id="task-{{ task.id }}"
                      data-task-id="{{ task.id }}"
-                     tabindex="0">
+                     tabindex="0"
+                     draggable="true">
                     <!-- Task Actions (HTMX) on the left -->
                     <div class="task-actions">
                         <button onclick="toggleComplete({{ task.id }}, '{{ task.state }}'); event.stopPropagation();"
@@ -240,8 +235,17 @@
             <p class="empty-state">No tasks for this week. Add one to get started!</p>
             {% endif %}
 
-            <!-- Add Task Form (HTMX) -->
-            <div class="add-task-form" id="add-task-container">
+            <!-- Ghost "new task" line — always visible -->
+            <div class="ghost-task-row text-mode-hide">
+                <input class="ghost-task-input"
+                       id="ghost-task-input"
+                       type="text"
+                       placeholder="new task…"
+                       autocomplete="off" />
+            </div>
+
+            <!-- Add Task Form (HTMX) — hidden anchor, triggered by ghost line -->
+            <div class="add-task-form" id="add-task-container" style="display:none">
                 <button hx-get="/partials/task-form?week_id={{ week.id }}"
                         hx-target="#add-task-container"
                         hx-swap="innerHTML"
@@ -374,7 +378,7 @@
                         class="scratchpad-textarea"
                         placeholder="Notes, ideas, reminders — anything that doesn't fit elsewhere..."
                         data-week-id="{{ week.id }}"
-                    >{{ week.note or '' }}</textarea>
+                    >{{ week.scratchpad or '' }}</textarea>
                     <span id="scratchpad-status" class="scratchpad-status"></span>
                 </div>
             </div>
@@ -457,7 +461,7 @@
                     const resp = await fetch(`/api/weeks/${weekId}`, {
                         method: 'PATCH',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({note: textarea.value})
+                        body: JSON.stringify({scratchpad: textarea.value})
                     });
                     status.textContent = resp.ok ? 'Saved' : 'Error saving';
                     if (resp.ok) setTimeout(() => { status.textContent = ''; }, 2000);
@@ -811,7 +815,7 @@
             // Handle keyboard navigation in autocomplete
             quickAddInput.addEventListener('keydown', function(e) {
                 if (autocompleteDropdown.classList.contains('hidden')) {
-                    // No autocomplete open
+                    // No autocomplete open — Enter or Shift+Enter submits
                     if (e.key === 'Enter' && this.value.trim()) {
                         e.preventDefault();
                         submitQuickAdd(this.value.trim());
@@ -1253,6 +1257,32 @@
         // Day 10: Work Entry Inline Editing
         // ========================================
 
+        // Normalize loose time input to HH:MM
+        // Accepts: "23" → "23:00", "9" → "09:00", "930" → "09:30",
+        //          "0930" → "09:30", "9:3" → "09:03", "9:30" → "09:30"
+        function normalizeTimeInput(val) {
+            val = val.trim();
+            // Already HH:MM or HH:MM:SS
+            if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(val)) {
+                const parts = val.split(':');
+                return parts[0].padStart(2, '0') + ':' + parts[1].padStart(2, '0');
+            }
+            // 3-digit: "930" → "09:30"
+            if (/^\d{3}$/.test(val)) {
+                return '0' + val[0] + ':' + val.slice(1);
+            }
+            // 4-digit: "0930" → "09:30"
+            if (/^\d{4}$/.test(val)) {
+                return val.slice(0, 2) + ':' + val.slice(2);
+            }
+            // 1-2 digit hour only: "23" → "23:00", "9" → "09:00", "24" → "00:00"
+            if (/^\d{1,2}$/.test(val)) {
+                const h = parseInt(val, 10);
+                return (h === 24 ? '00' : String(h).padStart(2, '0')) + ':00';
+            }
+            return val; // pass through; backend will reject if still invalid
+        }
+
         // Inline editing for work entry fields
         function enableWorkEntryEdit(element, entryId, fieldName) {
             const currentText = element.textContent.trim();
@@ -1325,7 +1355,12 @@
 
             // Save on Enter or blur
             const save = () => {
-                const newValue = input.value.trim();
+                let newValue = input.value.trim();
+
+                // Normalize time fields: "23" → "23:00", "930" → "09:30", "9:3" → "09:03"
+                if ((fieldName === 'start_time' || fieldName === 'end_time') && newValue) {
+                    newValue = normalizeTimeInput(newValue);
+                }
 
                 // Build the update payload
                 const payload = {};
@@ -1400,26 +1435,200 @@
             });
         });
 
-        // Text mode toggle: hide interactive controls and use handwritten styling
+        // ========================================
+        // Week note auto-save
+        // ========================================
         (function() {
-            const switchEl = document.getElementById('text-mode-switch');
-            if (!switchEl) return;
-
-            function applyTextMode(enabled) {
-                if (enabled) document.body.classList.add('text-mode');
-                else document.body.classList.remove('text-mode');
-            }
-
-            // initialize from localStorage
-            const saved = localStorage.getItem('textMode') === '1';
-            switchEl.checked = saved;
-            applyTextMode(saved);
-
-            switchEl.addEventListener('change', function() {
-                applyTextMode(this.checked);
-                localStorage.setItem('textMode', this.checked ? '1' : '0');
+            const input = document.getElementById('week-note-input');
+            if (!input) return;
+            const wid = input.dataset.weekId;
+            let timer = null;
+            input.addEventListener('input', function() {
+                clearTimeout(timer);
+                timer = setTimeout(async function() {
+                    await fetch(`/api/weeks/${wid}`, {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({note: input.value})
+                    });
+                }, 800);
             });
         })();
+
+        // ========================================
+        // Mode toggles (icon button versions)
+        // ========================================
+        function applyTextMode(enabled) {
+            if (enabled) document.body.classList.add('text-mode');
+            else document.body.classList.remove('text-mode');
+            const btn = document.getElementById('text-mode-btn');
+            if (btn) btn.classList.toggle('active', enabled);
+        }
+
+        function toggleTextMode() {
+            const enabled = !document.body.classList.contains('text-mode');
+            applyTextMode(enabled);
+            localStorage.setItem('textMode', enabled ? '1' : '0');
+        }
+
+        function applyDarkMode(enabled) {
+            if (enabled) document.documentElement.classList.add('dark');
+            else document.documentElement.classList.remove('dark');
+            const btn = document.getElementById('dark-mode-btn');
+            if (btn) btn.textContent = enabled ? '☽' : '☀';
+            btn && btn.classList.toggle('active', enabled);
+        }
+
+        function toggleDarkMode() {
+            const enabled = !document.documentElement.classList.contains('dark');
+            applyDarkMode(enabled);
+            localStorage.setItem('darkMode', enabled ? '1' : '0');
+        }
+
+        // Init from localStorage
+        applyTextMode(localStorage.getItem('textMode') === '1');
+        applyDarkMode(localStorage.getItem('darkMode') === '1');
+
+        // Keep hidden checkboxes in sync for any code that reads them
+        const _tmSwitch = document.getElementById('text-mode-switch');
+        if (_tmSwitch) _tmSwitch.checked = localStorage.getItem('textMode') === '1';
+        const _dmSwitch = document.getElementById('dark-mode-switch');
+        if (_dmSwitch) _dmSwitch.checked = localStorage.getItem('darkMode') === '1';
+
+        // ========================================
+        // Ghost task line — submit on Enter
+        // ========================================
+        (function() {
+            const ghostInput = document.getElementById('ghost-task-input');
+            if (!ghostInput) return;
+            ghostInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && this.value.trim()) {
+                    e.preventDefault();
+                    submitQuickAdd(this.value.trim());
+                    this.value = '';
+                }
+            });
+        })();
+
+        // ========================================
+        // Auto-fill start_time on log form render
+        // ========================================
+        document.body.addEventListener('htmx:afterSwap', function(e) {
+            if (e.detail.target.id === 'add-log-container') {
+                const startInput = e.detail.target.querySelector('input[name="start_time"]');
+                if (startInput && !startInput.value) {
+                    const now = new Date();
+                    const hh = String(now.getHours()).padStart(2, '0');
+                    const mm = String(now.getMinutes()).padStart(2, '0');
+                    startInput.value = `${hh}:${mm}`;
+                }
+            }
+        });
+
+        // ========================================
+        // Drag-to-reorder tasks (pm-task + task-item)
+        // ========================================
+        (function() {
+            let dragSrc = null;
+
+            function getDraggableList(el) {
+                if (el.classList.contains('pm-task') || el.classList.contains('pm-subtask')) {
+                    // siblings in same pm-project or pm-subtasks container
+                    return Array.from(el.parentElement.children).filter(c =>
+                        c.classList.contains('pm-task') || c.classList.contains('pm-subtask')
+                    );
+                }
+                if (el.classList.contains('task-item')) {
+                    return Array.from(el.parentElement.querySelectorAll('.task-item'));
+                }
+                return [];
+            }
+
+            document.querySelectorAll('.pm-task[draggable], .pm-subtask[draggable], .task-item[draggable]').forEach(el => {
+                el.addEventListener('dragstart', function(e) {
+                    dragSrc = this;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', this.dataset.taskId || '');
+                    this.style.opacity = '0.5';
+                });
+
+                el.addEventListener('dragend', function() {
+                    dragSrc = null;
+                    this.style.opacity = '';
+                    document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+                });
+
+                el.addEventListener('dragover', function(e) {
+                    if (!dragSrc || dragSrc === this) return;
+                    // Only allow within same list type
+                    const srcIsPm = dragSrc.classList.contains('pm-task') || dragSrc.classList.contains('pm-subtask');
+                    const tgtIsPm = this.classList.contains('pm-task') || this.classList.contains('pm-subtask');
+                    if (srcIsPm !== tgtIsPm) return;
+
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+                    this.classList.add('drag-over');
+                });
+
+                el.addEventListener('dragleave', function() {
+                    this.classList.remove('drag-over');
+                });
+
+                el.addEventListener('drop', async function(e) {
+                    e.preventDefault();
+                    this.classList.remove('drag-over');
+                    if (!dragSrc || dragSrc === this) return;
+
+                    const srcIsPm = dragSrc.classList.contains('pm-task') || dragSrc.classList.contains('pm-subtask');
+                    const tgtIsPm = this.classList.contains('pm-task') || this.classList.contains('pm-subtask');
+                    if (srcIsPm !== tgtIsPm) return;
+
+                    const list = getDraggableList(this);
+                    const srcIdx = list.indexOf(dragSrc);
+                    const tgtIdx = list.indexOf(this);
+                    if (srcIdx === -1 || tgtIdx === -1) return;
+
+                    // Optimistic DOM reorder
+                    const parent = this.parentElement;
+                    if (srcIdx < tgtIdx) {
+                        parent.insertBefore(dragSrc, this.nextSibling);
+                    } else {
+                        parent.insertBefore(dragSrc, this);
+                    }
+
+                    // Persist via API: move-up/move-down calls
+                    const taskId = dragSrc.dataset.taskId;
+                    if (!taskId) return;
+
+                    // Calculate how many positions to move
+                    const steps = Math.abs(tgtIdx - srcIdx);
+                    const direction = tgtIdx > srcIdx ? 'move-down' : 'move-up';
+
+                    for (let i = 0; i < steps; i++) {
+                        try {
+                            await fetch(`/api/tasks/${taskId}/${direction}`, { method: 'POST' });
+                        } catch (_) {}
+                    }
+                });
+            });
+        })();
+
+        // ========================================
+        // Shift+Enter anywhere in task lists to quick-focus quick-add
+        // ========================================
+        document.addEventListener('keydown', function(e) {
+            // Shift+Enter when no input focused: jump to quick-add
+            if (e.key === 'Enter' && e.shiftKey) {
+                const active = document.activeElement;
+                const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+                if (!isInput) {
+                    e.preventDefault();
+                    const qa = document.getElementById('quick-add-input');
+                    if (qa) { qa.focus(); qa.select(); }
+                }
+            }
+        });
     </script>
 </body>
 </html>

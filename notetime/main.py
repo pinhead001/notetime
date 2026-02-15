@@ -115,6 +115,15 @@ def ensure_db_columns():
                 except Exception:
                     pass
 
+            # Add scratchpad to weeks if missing
+            try:
+                conn.execute(text("ALTER TABLE weeks ADD COLUMN IF NOT EXISTS scratchpad TEXT DEFAULT NULL;"))
+            except Exception:
+                try:
+                    conn.execute(text("DO $$ BEGIN ALTER TABLE weeks ADD COLUMN scratchpad TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$;"))
+                except Exception:
+                    pass
+
             # Add start_time/end_time to work_entries if missing
             try:
                 conn.execute(text("ALTER TABLE work_entries ADD COLUMN IF NOT EXISTS start_time TIME DEFAULT NULL;"))
@@ -493,6 +502,8 @@ async def update_week_api(
         )
     if week_data.note is not None:
         week.note = week_data.note
+    if week_data.scratchpad is not None:
+        week.scratchpad = week_data.scratchpad
     db.commit()
     db.refresh(week)
     return week
@@ -1031,6 +1042,18 @@ async def update_work_entry_api(
         db_entry.minutes = entry_data.minutes
     if entry_data.note is not None:
         db_entry.note = entry_data.note
+    # Recalculate minutes from start/end times when both are present
+    # and minutes was not explicitly set in this update.
+    # Handles midnight crossing: 23:00 → 00:00 = 60 min, not -1380.
+    if entry_data.minutes is None and db_entry.start_time and db_entry.end_time:
+        from datetime import datetime as _dt
+        start_dt = _dt.combine(_dt.today(), db_entry.start_time)
+        end_dt   = _dt.combine(_dt.today(), db_entry.end_time)
+        if end_dt <= start_dt:
+            end_dt += timedelta(days=1)
+        computed = int((end_dt - start_dt).total_seconds() / 60)
+        if computed > 0:
+            db_entry.minutes = computed
     db.commit()
     db.refresh(db_entry)
     return db_entry
