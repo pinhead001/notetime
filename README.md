@@ -1,95 +1,100 @@
 # Notetime
 
-A notebook-style weekly task and time-tracking app.
+A notebook-style weekly task planner and time tracker.
+
+Plan tasks at the start of the week, log time as you work, and review a grouped summary at the end of the week.
+
+---
+
+## Beta Testing
+
+Notetime is currently in closed beta. If you have been invited to test the app:
+
+- **No installation required** — the app runs in your browser.
+- See [BETA-TESTING.md](BETA-TESTING.md) for a full guide covering the core workflow, quick-add syntax, keyboard shortcuts, and how to submit feedback.
+- See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for the current list of known gaps and workarounds.
+- Submit feedback at `/feedback` inside the app (no login required).
+
+---
 
 ## Core Concepts
-- Tasks are planned intent
-- Weeks define planning windows
-- Work entries record actual time spent
 
-## Tech stack
-- Python
-- FastAPI
-- SQLAlchemy
-- Pydantic
-- HTMX
-- SQLite
+- Tasks are planned intent — they belong to a week
+- Work entries record actual time spent on a task
+- Active and delegated tasks carry forward automatically to the next week
+- The weekly summary groups time by project, rounded to the nearest 15 minutes
 
-## How to run
+---
 
-### Option 1: Docker (Recommended for Local Development)
+## Tech Stack
 
-The easiest way to run Notetime locally with PostgreSQL:
+- Python / FastAPI
+- SQLAlchemy (PostgreSQL in production, SQLite in local dev)
+- Pydantic v2
+- HTMX (server-rendered partials)
+- Jinja2 templates
+
+---
+
+## Running Locally (Development)
+
+### Option 1: Docker (recommended for contributors)
+
+Starts the web app and a PostgreSQL database together.
 
 ```bash
-# Start all services (web app + database)
 docker-compose up -d
-
-# Initialize database with sample data
-docker-compose exec web python -m notetime.seed
 ```
 
-Then open your browser to: http://localhost:8000
+Then open: http://localhost:8000
 
-See [DOCKER.md](DOCKER.md) for complete Docker documentation.
+See [DOCKER.md](DOCKER.md) for full Docker documentation.
 
-### Option 2: Local Python Setup
+> **Note:** Docker is used internally by the development team and for superuser testing. External beta testers use the deployed web app — no local setup needed.
 
-1. Install dependencies:
+### Option 2: Python (SQLite)
+
 ```bash
 pip install -r requirements.txt
-```
-
-2. Seed the database with sample data:
-```bash
-python -m notetime.seed
-```
-
-### Run the web app
-
-Start the FastAPI server with HTMX web interface:
-
-```bash
+python -m notetime.seed   # optional sample data
 uvicorn notetime.main:app --reload
 ```
 
-Then open your browser to: http://localhost:8000
+Then open: http://localhost:8000
 
-The web interface provides:
-- Weekly task planning and tracking
-- Daily work entry logging
-- Automatic weekly summary generation
-- Inline task actions (complete, delegate, defer)
+Set environment variables (copy `.env.example` to `.env`):
 
-### API Documentation
+```
+SECRET_KEY=<random-64-char-string>
+COOKIE_SECURE=false   # for local HTTP only
+```
 
-With the server running, view the auto-generated API docs:
+### API Docs
+
+With the server running:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
+- Help: http://localhost:8000/api/help
 
-### Demo scripts
+---
 
-Run demonstration scripts to see core functionality:
-
-```bash
-# Weekly summary generation
-python -m scripts.demo_summary
-
-# Task rollover between weeks
-python -m scripts.demo_rollover
-```
-
-### Run tests
+## Running Tests
 
 ```bash
-# Run all tests
 pytest
-
-# Run specific test files
-pytest tests/test_time_engine.py
-pytest tests/test_summary.py
-pytest tests/test_rollover.py
-
-# Run with coverage
-pytest --cov=notetime
+pytest --cov=notetime   # with coverage
 ```
+
+The test suite requires `SECRET_KEY` and `COOKIE_SECURE=false` to be set. These are injected automatically via `pyproject.toml` when running `pytest`.
+
+---
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for deploying to Render.com (the current production target).
+
+---
+
+## Feedback
+
+File issues or feature requests via the in-app feedback form at `/feedback`, or contact the team directly.
