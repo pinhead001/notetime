@@ -114,6 +114,19 @@ def ensure_db_columns():
                     conn.execute(text("UPDATE tasks SET sort_order = 0 WHERE sort_order IS NULL;"))
                 except Exception:
                     pass
+
+            # Add start_time/end_time to work_entries if missing
+            try:
+                conn.execute(text("ALTER TABLE work_entries ADD COLUMN IF NOT EXISTS start_time TIME DEFAULT NULL;"))
+                conn.execute(text("ALTER TABLE work_entries ADD COLUMN IF NOT EXISTS end_time TIME DEFAULT NULL;"))
+            except Exception:
+                try:
+                    conn.execute(text("DO $$ BEGIN ALTER TABLE work_entries ADD COLUMN start_time TIME; EXCEPTION WHEN duplicate_column THEN NULL; END $$;"))
+                    conn.execute(text("DO $$ BEGIN ALTER TABLE work_entries ADD COLUMN end_time TIME; EXCEPTION WHEN duplicate_column THEN NULL; END $$;"))
+                    conn.execute(text("UPDATE work_entries SET start_time = NULL WHERE start_time IS NULL;"))
+                    conn.execute(text("UPDATE work_entries SET end_time = NULL WHERE end_time IS NULL;"))
+                except Exception:
+                    pass
     except Exception:
         # If the DB isn't available at startup (transient), don't crash the
         # whole app — the app will surface DB errors when routes run.
