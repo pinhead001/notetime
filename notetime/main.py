@@ -46,8 +46,8 @@ from notetime.auth import (
 )
 
 
-# Create database tables (commented out for testing - tables should be created via migrations or seed scripts)
-# Base.metadata.create_all(bind=engine)
+# Create database tables on startup
+Base.metadata.create_all(bind=engine)
 
 
 # Rate limiter — uses the client's IP address as the key.
@@ -92,6 +92,9 @@ def ensure_db_columns():
     """Add missing columns used by the current code if they don't exist."""
     # Only run when using a real SQL DB (engine configured in notetime.db)
     try:
+        # First, ensure all tables exist
+        Base.metadata.create_all(bind=engine)
+
         with engine.begin() as conn:
             # parent_task_id was added in a schema update; some DBs may still
             # be on the old schema. Add the column if it's missing.
