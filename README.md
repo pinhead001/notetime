@@ -29,7 +29,7 @@ Notetime is currently in closed beta. If you have been invited to test the app:
 ## Tech Stack
 
 - Python / FastAPI
-- SQLAlchemy (PostgreSQL in production, SQLite in local dev)
+- SQLAlchemy with PostgreSQL (Neon for serverless production, SQLite for local dev)
 - Pydantic v2
 - HTMX (server-rendered partials)
 - Jinja2 templates
@@ -91,7 +91,10 @@ The test suite requires `SECRET_KEY` and `COOKIE_SECURE=false` to be set. These 
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for deploying to Render.com (the current production target).
+Multiple deployment options are available:
+
+- **Neon (Serverless PostgreSQL)** - Recommended for modern deployments. See [NEON-DEPLOYMENT.md](NEON-DEPLOYMENT.md) for step-by-step setup with autoscaling, instant provisioning, and database branching.
+- **Render.com** - Traditional deployment. See [DEPLOYMENT.md](DEPLOYMENT.md) for setup instructions.
 
 ---
 

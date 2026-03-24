@@ -56,11 +56,18 @@ else:
     #                    a new TCP connection every time.
     #   max_overflow   – Extra connections allowed above pool_size when all
     #                    pool slots are busy. They're closed when released.
+    #
+    # For Neon (serverless PostgreSQL):
+    #   - Neon scales to zero when inactive, so pool_pre_ping is critical
+    #   - Smaller pool_size (2-5) works well with Neon's autoscaling
+    #   - Shorter pool_recycle (60s) prevents connection timeouts
+    #   - pool_timeout added to handle connection acquisition
     engine_config.update({
         "pool_pre_ping": True,
-        "pool_recycle": 300,
-        "pool_size": 5,
-        "max_overflow": 10,
+        "pool_recycle": 60,  # Optimized for serverless (was 300)
+        "pool_size": 2,      # Smaller pool for serverless (was 5)
+        "max_overflow": 8,   # Adequate overflow (was 10)
+        "pool_timeout": 30,  # Timeout for getting connection from pool
     })
 
 # Create the engine using the URL and settings built above.

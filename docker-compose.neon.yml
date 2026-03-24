@@ -1,0 +1,43 @@
+version: '3.8'
+
+# Docker Compose configuration for using Neon database
+# This configuration runs only the web application container
+# and connects to your Neon (serverless PostgreSQL) database.
+#
+# Usage:
+#   1. Create .env file with your Neon DATABASE_URL:
+#      DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require
+#      SECRET_KEY=your-secret-key
+#
+#   2. Start the application:
+#      docker-compose -f docker-compose.neon.yml up -d
+#
+#   3. Initialize database (first time only):
+#      docker-compose -f docker-compose.neon.yml exec web python -m notetime.create_db
+#
+#   4. (Optional) Seed with demo data:
+#      docker-compose -f docker-compose.neon.yml exec web python -m notetime.seed
+
+services:
+  # FastAPI Web Application (using Neon database)
+  web:
+    build: .
+    container_name: notetime-web-neon
+    environment:
+      # Neon database connection - set in .env file
+      DATABASE_URL: ${DATABASE_URL}
+      # JWT settings
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for hot reload during development
+      - .:/app
+      # Don't override the installed packages
+      - /app/__pycache__
+    command: uvicorn notetime.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+# No volumes needed - database is in Neon cloud!
